@@ -1,0 +1,6 @@
+{
+  "name": "IkLi AI Voice Agent",
+  "description": "An immersive AI voice assistant interface featuring a 3D morphing orb using Three.js, contained within a sleek phone frame.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iklipse | Cast your shadow</title>
+  
+  <!-- CDN IMPORTS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://api.fontshare.com/v2/css?f[]=excon@1,2,500,700,900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,400..900&family=Outfit:wght@100..400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
+
+  <style>
+    /* PAGE LAYOUT */
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      background: #000000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Excon', sans-serif;
+      overflow: hidden;
+      color: white;
+      transition: background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1), color 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* THE DOT GRID BACKGROUND (STITCH EFFECT) */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+      background-size: 32px 32px;
+      z-index: 0;
+      pointer-events: none;
+      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 60%);
+      transition: mask-image 0.5s ease;
+    }
+    
+    /* SUBTLE VECTOR ARROW SHAPES IN MESH */
+    .bg-mesh {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      opacity: 0.05;
+      pointer-events: none;
+      background-image: 
+        linear-gradient(45deg, rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(-45deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+      background-size: 64px 64px;
+    }
+
+
+    /* Fullscreen canvas */
+    #orb-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+
+    /* All UI layers above canvas */
+    .ui-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .ui-layer button, .ui-layer a {
+      pointer-events: all;
+      cursor: pointer;
+    }
+
+    /* desktop-optimized containers */
+    .content-max-width {
+      width: 100%;
+      max-width: 1200px;
+      height: 100%;
+      position: relative;
+    }
+
+    /* chat bubbles for desktop */
+    #bubbles-container {
+      position: absolute;
+      top: 200px;
+      right: 0;
+      width: 45%;
+      max-width: 550px;
+      bottom: 250px;
+      padding: 0 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 16px;
+      overflow: hidden;
+      mask-image: linear-gradient(to bottom, transparent, black 15%);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #screen-active .timer-container {
+      position: absolute;
+      top: 140px;
+      right: 40px;
+      width: 45%;
+      max-width: 550px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #screen-active .controls-container {
+      position: absolute;
+      bottom: 100px;
+      right: 0;
+      width: 45%;
+      max-width: 550px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* CSS ANIMATIONS */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    button {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    button:active {
+      transform: scale(0.95);
+    }
+    
+    .glass-card {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+    }
+
+    /* HEADER STYLES */
+    .header-wrapper {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 40px 60px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      pointer-events: all;
+      transition: opacity 0.3s;
+    }
+    .header-logo:hover {
+        opacity: 0.8;
+    }
+
+    .logo-shape {
+      width: 52px;
+      height: 24px;
+      background: #ff4c39;
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 24'%3E%3Cpath d='M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24ZM32 24C38.6274 24 44 18.6274 44 12C44 5.37258 38.6274 0 32 0C25.3726 0 20 5.37258 20 12C20 18.6274 25.3726 24 32 24Z'/%3E%3C/svg%3E");
+      mask-size: contain;
+      mask-repeat: no-repeat;
+      mask-position: center;
+      transition: background-color 0.5s;
+    }
+
+    .nav-bar-pill {
+      background: #0D0D0D;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 100px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      pointer-events: all;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    .nav-link {
+      color: #71717A;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 10px 18px;
+      border-radius: 100px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .nav-link:hover {
+      color: white;
+      background: rgba(255,255,255,0.06);
+    }
+    .nav-link.active {
+      color: white;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .theme-toggle-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      background: #0D0D0D;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      cursor: pointer;
+      pointer-events: all;
+      backdrop-filter: blur(20px);
+      transition: all 0.3s;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .theme-toggle-btn:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.2);
+    }
+
+    .iklipse-noise-text {
+      color: #71717A;
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      transition: color 1.2s;
+    }
+
+    /* PRELOADER / SPLASH SCREEN */
+    #preloader {
+      position: fixed;
+      inset: 0;
+      background: #000000;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: all 1.2s cubic-bezier(0.8, 0, 0.2, 1);
+      clip-path: circle(150% at 50% 50%);
+    }
+    
+    .preloader-text {
+      font-size: 38px;
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-weight: 300;
+      letter-spacing: -0.01em;
+      color: white;
+      text-transform: none;
+      transform: scale(1.5);
+      animation: splash-intro 2.5s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+    }
+
+    @keyframes splash-intro {
+      0% {
+        opacity: 0;
+        transform: scale(2);
+        filter: blur(20px);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+        filter: blur(0px);
+      }
+    }
+
+    #preloader.fast-zoom {
+      clip-path: circle(0% at 50% 50%);
+      background: rgba(0,0,0,0);
+    }
+    #preloader.fast-zoom .preloader-text {
+      transform: scale(10);
+      opacity: 0;
+      transition: all 0.8s cubic-bezier(0.8, 0, 0.2, 1);
+    }
+
+    /* LIGHT MODE OVERRIDES */
+    body.light-mode {
+      background: #D4D4D8;
+      color: #000000;
+    }
+    body.light-mode .bg-grid {
+      background-image: radial-gradient(rgba(0, 0, 0, 0.2) 1px, transparent 1px);
+      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 70%);
+    }
+    body.light-mode .bg-mesh {
+      opacity: 0.04;
+      background-image: 
+        linear-gradient(45deg, rgba(0,0,0,0.1) 1px, transparent 1px),
+        linear-gradient(-45deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+    }
+    body.light-mode .logo-shape {
+      background: #ff4c39;
+    }
+    body.light-mode .nav-bar-pill {
+      background: #D4D4D8;
+      border-color: #A1A1AA;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+    }
+    body.light-mode .nav-link {
+      color: #27272A;
+    }
+    body.light-mode .nav-link:hover, body.light-mode .nav-link.active {
+      color: #000000;
+      background: rgba(0, 0, 0, 0.08);
+    }
+    body.light-mode .theme-toggle-btn {
+      background: #FFFFFF;
+      border-color: #D4D4D8;
+      color: #000000;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    body.light-mode .iklipse-noise-text {
+      color: #52525B;
+    }
+    body.light-mode .bubble.agent {
+      background: #FFFFFF;
+      border-color: #D4D4D8;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    body.light-mode .bubble.agent p {
+      color: #000000;
+    }
+    body.light-mode .bubble.user p {
+      color: #FFFFFF;
+    }
+    body.light-mode .bubble.user {
+      background: #ff4c39;
+      border-color: transparent;
+      box-shadow: 0 10px 25px rgba(255, 76, 57, 0.2);
+    }
+    body.light-mode .glass-card {
+      background: rgba(255, 255, 255, 0.95);
+      border-color: rgba(0, 0, 0, 0.15);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+    }
+    body.light-mode #timer, body.light-mode #final-duration, body.light-mode h2 {
+      color: #000000;
+    }
+    body.light-mode #speaking-status {
+      color: #ff4c39;
+      text-shadow: 0 2px 4px rgba(255, 76, 57, 0.1);
+    }
+    body.light-mode #start-btn {
+      background: #FFFFFF;
+      border-color: #D4D4D8;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.12);
+    }
+    body.light-mode #start-btn .material-symbols-outlined {
+      color: #000000 !important;
+    }
+
+    /* CUSTOM TOOLTIP SYSTEM */
+    [data-tooltip] {
+      position: relative;
+    }
+    [data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 12px);
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      padding: 8px 14px;
+      background: #09090B;
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      border-radius: 10px;
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.1);
+      z-index: 1000;
+      font-family: 'Excon', sans-serif;
+    }
+    body.light-mode [data-tooltip]::after {
+      background: #FFFFFF;
+      color: #000000;
+      border: 1px solid #E4E4E7;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    [data-tooltip]:hover::after {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div id="preloader">
+    <div class="preloader-text">iklipse the noise</div>
+  </div>
+
+  <div class="header-wrapper">
+    <a href="https://iklipseworld.com/" class="header-logo" title="IKLIPSE WORLD">
+      <div class="logo-shape"></div>
+    </a>
+
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <button class="theme-toggle-btn" onclick="toggleTheme()" data-tooltip="Toggle appearance mode">
+        <span class="material-symbols-outlined" style="font-size: 22px;">light_mode</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-grid"></div>
+  <div class="bg-mesh"></div>
+
+  <canvas id="orb-canvas"></canvas>
+
+  <script>
+    // Mouse tracking for grid glow and orb
+    let mouseX = 0;
+    let mouseY = 0;
+    let targetOrbMouseX = 0;
+    let targetOrbMouseY = 0;
+
+    document.addEventListener('mousemove', (e) => {
+      const x = (e.clientX / window.innerWidth) * 100;
+      const y = (e.clientY / window.innerHeight) * 100;
+      document.body.style.setProperty('--mouse-x', `${x}%`);
+      document.body.style.setProperty('--mouse-y', `${y}%`);
+
+      // Orb mouse interaction
+      targetOrbMouseX = (e.clientX / window.innerWidth - 0.5) * 0.4;
+      targetOrbMouseY = (e.clientY / window.innerHeight - 0.5) * 0.4;
+
+      // Update normalized device coordinates for raycasting
+      mouseVector.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouseVector.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    // Handle Preloader
+    window.addEventListener('load', () => {
+      const preloader = document.getElementById('preloader');
+      setTimeout(() => {
+        preloader.classList.add('fast-zoom');
+        setTimeout(() => {
+          preloader.style.visibility = 'hidden';
+        }, 1200);
+      }, 2000); // Show for 2s then zoom fast
+    });
+  </script>
+
+  <!-- CONFIRMATION DIALOG -->
+  <div class="ui-layer" id="confirmation-modal" style="display:none; z-index: 200; backdrop-filter: blur(8px); background: rgba(0,0,0,0.4);">
+    <div class="glass-card" style="padding: 40px; max-width: 400px; width: 90%; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px;">
+      <div style="background: rgba(255, 76, 57, 0.1); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 76, 57, 0.2);">
+        <span class="material-symbols-outlined" style="color: #ff4c39; font-size: 32px;">logout</span>
+      </div>
+      <div>
+        <h3 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">End Session?</h3>
+        <p style="color: #71717A; font-size: 15px; line-height: 1.5;">This will terminate the current voice link and finalize your interaction data.</p>
+      </div>
+      <div style="display: flex; gap: 12px; width: 100%;">
+        <button onclick="cancelEndCall()" style="flex: 1; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #A1A1AA; font-weight: 600; font-family: 'Excon', sans-serif;">Cancel</button>
+        <button onclick="confirmEndSession()" style="flex: 1.5; padding: 16px; border-radius: 16px; background: #ff4c39; border: none; color: white; font-weight: 700; font-family: 'Excon', sans-serif; box-shadow: 0 8px 24px rgba(255,76,57,0.25);">End Session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 1: IDLE -->
+  <div class="ui-layer" id="screen-idle">
+    <div class="content-max-width">
+      <!-- control area -->
+      <div style="position:absolute;bottom:120px;width:100%;
+                  display:flex;flex-direction:column;align-items:center;gap:20px">
+        <button id="start-btn" onclick="startCall()" data-tooltip="Initialize voice link" style="
+          width:84px;height:84px;border-radius:50%;
+          border:1px solid rgba(255,255,255,0.12);
+          background:rgba(255,255,255,0.04);
+          backdrop-filter:blur(10px);
+          display:flex;align-items:center;justify-content:center;
+          box-shadow:0 0 50px rgba(255,255,255,0.05);
+          transition:all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
+          font-family: 'Excon', 'Syne', sans-serif;">
+          <span class="material-symbols-outlined" 
+                style="color:white;font-size:32px">mic</span>
+        </button>
+        <p style="font-size:14px;color:#71717A;font-weight:400;letter-spacing:0.05em;opacity:0.8;font-family: 'Excon', sans-serif;">Press to Connect</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: ACTIVE CALL -->
+  <div class="ui-layer" id="screen-active" style="display:none">
+    <div class="content-max-width">
+      <!-- session timer -->
+      <div class="timer-container">
+        <div class="glass-card" style="padding:10px 24px;border-radius:100px">
+          <span id="timer" style="font-size:16px;color:#A1A1AA;font-weight:700;
+                font-variant-numeric:tabular-nums">0:00</span>
+        </div>
+      </div>
+
+      <!-- chat bubbles -->
+      <div id="bubbles-container">
+        <div class="bubble agent" style="
+          align-self:flex-start;max-width:85%;
+          background:rgba(255,255,255,0.04);
+          border:1px solid rgba(255,255,255,0.06);
+          border-radius:24px 24px 24px 4px;
+          padding:20px 24px;
+          animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards">
+          <p style="font-size:15px;color:#E4E4E7;line-height:1.6">
+            Hi! I'm Ikli, Iklipse's AI assistant. My systems are live and ready to assist you.
+          </p>
+        </div>
+
+        <div class="bubble user" style="
+          align-self:flex-end;max-width:80%;
+          background:rgba(99,102,241,0.05);
+          border:1px solid rgba(99,102,241,0.1);
+          border-radius:24px 24px 4px 24px;
+          padding:20px 24px;
+          animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s both">
+          <p style="font-size:15px;color:#E4E4E7;line-height:1.6">
+            Show me what Iklipse is capable of.
+          </p>
+        </div>
+
+        <div class="bubble agent" style="
+          align-self:flex-start;max-width:85%;
+          background:rgba(255,255,255,0.04);
+          border:1px solid rgba(255,255,255,0.06);
+          border-radius:24px 24px 24px 4px;
+          padding:20px 24px;
+          animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both">
+          <p style="font-size:15px;color:#E4E4E7;line-height:1.6">
+            We specialize in advanced AI deployment — from real-time voice agents to complex automation workflows. Should we discuss a specific use case?
+          </p>
+        </div>
+      </div>
+
+      <!-- speaking status + mic -->
+      <div class="controls-container">
+        <p id="speaking-status" style="font-size:12px;color:#ff4c39;font-weight:600;
+           letter-spacing:0.2em;text-transform:uppercase;font-family:'Excon', sans-serif">Speaking</p>
+        <button onclick="endCall()" data-tooltip="End current session" style="
+          width:80px;height:80px;border-radius:50%;
+          border:1px solid rgba(255,76,57,0.3);
+          background:rgba(255,76,57,0.05);
+          backdrop-filter:blur(12px);
+          display:flex;align-items:center;justify-content:center;
+          box-shadow:0 0 50px rgba(255,76,57,0.1);
+          transition:all 0.4s ease;">
+          <span class="material-symbols-outlined" 
+                style="color:#ff4c39;font-size:32px">mic</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: ENDED -->
+  <div class="ui-layer" id="screen-ended" style="display:none">
+    <div style="max-width:500px;width:90%;display:flex;flex-direction:column;align-items:center">
+
+      <!-- checkmark -->
+      <div style="width:80px;height:80px;border-radius:50%;
+           background:rgba(34,197,94,0.08);
+           border:1px solid rgba(34,197,94,0.2);
+           display:flex;align-items:center;justify-content:center;
+           margin-bottom:32px">
+        <span class="material-symbols-outlined" 
+              style="color:#22C55E;font-size:40px">check_circle</span>
+      </div>
+
+      <h2 style="font-size:32px;font-weight:800;color:#FAFAFA;
+                margin-top:0;text-align:center;letter-spacing:-0.02em">
+        Session Complete
+      </h2>
+      <p style="font-size:16px;color:#71717A;margin-top:12px;text-align:center;font-weight:300">
+        Link terminated successfully. How would you like to proceed?
+      </p>
+
+      <!-- summary card -->
+      <div class="glass-card" style="width:100%;margin-top:40px;padding:32px">
+        <div style="display:flex;justify-content:space-between;
+                    align-items:center;margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="material-symbols-outlined" 
+                  style="color:#52525B;font-size:20px">schedule</span>
+            <span style="font-size:14px;color:#A1A1AA;font-weight:500">Duration</span>
+          </div>
+          <span id="final-duration" style="font-size:14px;
+                font-weight:700;color:#FAFAFA">0:00</span>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,0.06);margin-bottom:20px"></div>
+        <div style="display:flex;justify-content:space-between;
+                    align-items:center">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="material-symbols-outlined" 
+                  style="color:#52525B;font-size:20px">chat_bubble</span>
+            <span style="font-size:14px;color:#A1A1AA;font-weight:500">Exchanges</span>
+          </div>
+          <span style="font-size:14px;font-weight:700;color:#FAFAFA">12</span>
+        </div>
+      </div>
+
+      <!-- book button -->
+      <button style="width:100%;height:64px;margin-top:32px;
+        background:#ff4c39;border:none;border-radius:20px;
+        box-shadow:0 12px 40px rgba(255,76,57,0.3);
+        display:flex;align-items:center;justify-content:center;gap:12px;
+        font-family:'Excon', sans-serif;font-size:16px;font-weight:800;color:white;
+        cursor:pointer;">
+        <span class="material-symbols-outlined" style="font-size:20px">
+          calendar_today
+        </span>
+        Schedule Strategy Session
+      </button>
+
+      <!-- start again -->
+      <button onclick="resetCall()" style="
+        margin-top:24px;background:transparent;border:none;
+        font-family:'Excon', sans-serif;font-size:14px;color:#52525B;cursor:pointer;
+        font-weight:500;transition:color 0.2s"
+        onmouseover="this.style.color='#FAFAFA'"
+        onmouseout="this.style.color='#52525B'">
+        ← Re-initialize Voice Link
+      </button>
+    </div>
+  </div>
+
+  <!-- THREE.JS IMPLEMENTATION -->
+  <script>
+    const canvas = document.getElementById('orb-canvas');
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas, antialias: true, alpha: true
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.z = 8; // Orb moved slightly back for desktop
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x404060, 1.0);
+    scene.add(ambientLight);
+    
+    const pointLight1 = new THREE.PointLight(0xffffff, 4, 30);
+    pointLight1.position.set(10, 10, 10);
+    scene.add(pointLight1);
+    
+    const pointLight2 = new THREE.PointLight(0xff4c39, 2, 30);
+    pointLight2.position.set(-10, -5, 5);
+    scene.add(pointLight2);
+
+    const pointLight3 = new THREE.PointLight(0x6366f1, 0, 20); // Reactive blue/indigo light
+    pointLight3.position.set(0, 5, -5);
+    scene.add(pointLight3);
+
+    // Vertex Shader
+    const vertexShader = `
+      uniform float uTime;
+      uniform float uIntensity;
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vWorldPosition;
+
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
+        float intensity = uIntensity;
+        
+        pos.x += sin(pos.y * 2.0 + uTime * 0.8) * intensity;
+        pos.y += cos(pos.z * 1.8 + uTime * 0.6) * intensity * 0.9;
+        pos.z += sin(pos.x * 2.2 + uTime * 0.7) * intensity * 0.85;
+        
+        pos.x += sin(pos.z * 1.5 + uTime * 0.4) * intensity * 0.4;
+        pos.y += cos(pos.x * 1.4 + uTime * 1.0) * intensity * 0.3;
+        
+        pos += normal * sin(uTime * 0.5 + pos.x * 2.0) * intensity * 0.25;
+        
+        vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `;
+
+    // Fragment Shader  
+    const fragmentShader = `
+      uniform float uTime;
+      uniform float uState;
+      uniform float uSentiment;
+      uniform float uTheme;
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vWorldPosition;
+
+      void main() {
+        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+        float fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 3.0);
+        
+        vec3 idle1 = mix(vec3(0.02, 0.02, 0.04), vec3(0.08, 0.08, 0.1), uTheme); 
+        vec3 idle2 = mix(vec3(0.08, 0.08, 0.12), vec3(0.15, 0.15, 0.18), uTheme); 
+        
+        vec3 act1 = vec3(1.0, 0.298, 0.223); // Iklipse Orange #ff4c39
+        vec3 act2 = mix(vec3(1.0, 1.0, 1.0), vec3(0.1, 0.1, 0.12), uTheme);     
+        vec3 act3 = mix(vec3(0.0, 0.0, 0.0), vec3(0.05, 0.05, 0.08), uTheme);      
+        
+        // Sentiment adjustments
+        // uSentiment: 0.0 (Cool/Negative) -> 0.5 (Neutral) -> 1.0 (Positive/Warm)
+        vec3 sentimentWarm = vec3(1.0, 0.5, 0.2); 
+        vec3 sentimentCool = vec3(0.1, 0.3, 0.8);
+        vec3 sentimentColor = mix(sentimentCool, sentimentWarm, uSentiment);
+        
+        float t = uTime * 0.2;
+        float noise = sin(vWorldPosition.x * 2.0 + t) * cos(vWorldPosition.y * 2.0 + t);
+        
+        vec3 idleColor = mix(idle1, idle2, noise * 0.5 + 0.5);
+        vec3 activeColor = mix(act1, act2, noise * 0.5 + 0.5);
+        
+        // Shift active color based on sentiment
+        activeColor = mix(activeColor, sentimentColor, 0.4);
+        activeColor = mix(activeColor, act3, sin(uTime * 0.4) * 0.5 + 0.5);
+        
+        vec3 finalColor = mix(idleColor, activeColor, uState);
+        
+        vec3 glowBase = mix(vec3(1.0, 0.298, 0.223), vec3(0.05, 0.05, 0.1), 1.0 - uState);
+        // In light theme, the glow base needs to be much darker for context
+        glowBase = mix(glowBase, vec3(0.02, 0.02, 0.04), uTheme * (1.0 - uState) * 0.8);
+        
+        vec3 glow = mix(glowBase, sentimentColor, uState * 0.5);
+        
+        finalColor += glow * fresnel * 1.8;
+        
+        float specSize = mix(32.0, 24.0, uTheme);
+        float spec = pow(max(dot(reflect(vec3(-1.0, -1.0, -1.0), vNormal), viewDir), 0.0), specSize);
+        finalColor += vec3(1.0) * spec * 0.4 * (1.0 + uSentiment * 0.5);
+        
+        gl_FragColor = vec4(finalColor, 0.9);
+      }
+    `;
+
+    const geometry = new THREE.SphereGeometry(2.2, 128, 128);
+    const material = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: {
+        uTime:      { value: 0 },
+        uIntensity: { value: 0.15 },
+        uState:     { value: 0.0 },
+        uSentiment: { value: 0.5 },
+        uTheme:     { value: 0.0 },
+      },
+      transparent: true,
+    });
+    const orb = new THREE.Mesh(geometry, material);
+    scene.add(orb);
+
+    const glowGeo = new THREE.SphereGeometry(2.8, 64, 64);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0xff4c39,
+      transparent: true,
+      opacity: 0.03,
+      side: THREE.BackSide,
+    });
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    scene.add(glowMesh);
+
+    // Interaction Tools
+    const raycaster = new THREE.Raycaster();
+    const mouseVector = new THREE.Vector2();
+    let isHoveringOrb = false;
+
+    // State management
+    let appState = 'idle';
+    let targetIntensity = 0.15;
+    let targetState = 0.0;
+    let targetRotSpeed = 0.002;
+    let targetX = 0.0;
+    let targetY = 0.0;
+    let targetScale = 1.0;
+    let hoverScaleFactor = 1.0;
+    let hoverGlowFactor = 1.0;
+    let targetSentiment = 0.5;
+    let timerInterval = null;
+    let seconds = 0;
+
+    // Global hook for sentiment control
+    window.setOrbSentiment = (val) => {
+      targetSentiment = THREE.MathUtils.clamp(val, 0, 1);
+    };
+
+    function startCall() {
+      appState = 'active';
+      targetIntensity = 0.6;
+      targetState = 1.0;
+      targetRotSpeed = 0.012;
+      targetX = -3.5; // Move further to the left
+      targetY = 0.0; 
+      targetScale = 1.05; // Slightly smaller for split view
+      glowMat.color.setHex(0xff4c39);
+      
+      document.getElementById('screen-idle').style.display = 'none';
+      document.getElementById('screen-active').style.display = 'flex';
+      
+      seconds = 0;
+      timerInterval = setInterval(() => {
+        seconds++;
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        document.getElementById('timer').textContent = m + ':' + String(s).padStart(2,'0');
+      }, 1000);
+
+      const statuses = ['Processing Voice Input', 'Generating Response', 'Thinking', 'Speaking'];
+      let i = 0;
+      const statusInterval = setInterval(() => {
+        if (appState !== 'active') { clearInterval(statusInterval); return; }
+        document.getElementById('speaking-status').textContent = statuses[i % statuses.length];
+        i++;
+      }, 4000);
+    }
+
+    function endCall() {
+      // Show confirmation dialog instead of ending immediately
+      document.getElementById('confirmation-modal').style.display = 'flex';
+    }
+
+    function cancelEndCall() {
+      document.getElementById('confirmation-modal').style.display = 'none';
+    }
+
+    function confirmEndSession() {
+      document.getElementById('confirmation-modal').style.display = 'none';
+      appState = 'ended';
+      targetIntensity = 0.08;
+      targetState = 0.0;
+      targetRotSpeed = 0.001;
+      targetX = 0.0;
+      targetY = 0.0;
+      targetScale = 0.6;
+      glowMat.color.setHex(0xff4c39);
+      
+      clearInterval(timerInterval);
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      document.getElementById('final-duration').textContent = m + ':' + String(s).padStart(2,'0');
+      
+      document.getElementById('screen-active').style.display = 'none';
+      document.getElementById('screen-ended').style.display = 'flex';
+    }
+
+    function resetCall() {
+      appState = 'idle';
+      targetIntensity = 0.15;
+      targetState = 0.0;
+      targetRotSpeed = 0.002;
+      targetX = 0.0;
+      targetY = 0.0;
+      targetScale = 1.0;
+      
+      document.getElementById('screen-ended').style.display = 'none';
+      document.getElementById('screen-idle').style.display = 'flex';
+    }
+
+    function toggleTheme() {
+      const body = document.body;
+      const isLight = body.classList.toggle('light-mode');
+      const icon = document.querySelector('.theme-toggle-btn .material-symbols-outlined');
+      
+      if (isLight) {
+        icon.textContent = 'dark_mode';
+        renderer.setClearColor(0xf4f4f5, 0);
+        material.uniforms.uTheme.value = 1.0;
+        pointLight1.intensity = 2.5;
+        pointLight2.intensity = 2.0;
+        pointLight3.intensity = 0.8;
+      } else {
+        icon.textContent = 'light_mode';
+        renderer.setClearColor(0x000000, 0);
+        material.uniforms.uTheme.value = 0.0;
+        pointLight1.intensity = 4;
+        pointLight2.intensity = 2;
+        pointLight3.intensity = 1.0;
+      }
+    }
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsed = clock.getElapsedTime();
+      
+      material.uniforms.uTime.value = elapsed;
+      material.uniforms.uIntensity.value = THREE.MathUtils.lerp(material.uniforms.uIntensity.value, targetIntensity, 0.04);
+      material.uniforms.uState.value = THREE.MathUtils.lerp(material.uniforms.uState.value, targetState, 0.04);
+      material.uniforms.uSentiment.value = THREE.MathUtils.lerp(material.uniforms.uSentiment.value, targetSentiment, 0.02);
+      
+      // Raycasting for hover detection
+      raycaster.setFromCamera(mouseVector, camera);
+      const intersects = raycaster.intersectObject(orb);
+      isHoveringOrb = intersects.length > 0;
+
+      // Smooth interpolation for hover effects
+      hoverScaleFactor = THREE.MathUtils.lerp(hoverScaleFactor, isHoveringOrb ? 1.08 : 1.0, 0.08);
+      hoverGlowFactor = THREE.MathUtils.lerp(hoverGlowFactor, isHoveringOrb ? 2.5 : 1.0, 0.08);
+
+      // Mouse responsive rotation
+      mouseX = THREE.MathUtils.lerp(mouseX, targetOrbMouseX, 0.05);
+      mouseY = THREE.MathUtils.lerp(mouseY, targetOrbMouseY, 0.05);
+
+      orb.rotation.y += targetRotSpeed + (mouseX * 0.02);
+      orb.rotation.x += (targetRotSpeed * 0.4) + (mouseY * 0.02);
+      
+      orb.position.x = THREE.MathUtils.lerp(orb.position.x, targetX, 0.04);
+      orb.position.y = THREE.MathUtils.lerp(orb.position.y, targetY, 0.04);
+      orb.position.y += Math.sin(elapsed * 1.2) * 0.08;
+      
+      // Subtle breathing pulse + Hover scale
+      const pulse = 1.0 + Math.sin(elapsed * 1.5) * 0.02;
+      orb.scale.setScalar(THREE.MathUtils.lerp(orb.scale.x, targetScale * pulse * hoverScaleFactor, 0.04));
+      
+      glowMesh.scale.copy(orb.scale);
+      glowMesh.scale.multiplyScalar(1.2); // Maintain shadow/glow buffer
+      glowMesh.position.copy(orb.position);
+      
+      // Shadow / Halo effect intensified on hover
+      const baseGlow = 0.03 + material.uniforms.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02;
+      glowMat.opacity = baseGlow * hoverGlowFactor;
+      
+      // Dynamic Lighting Updates
+      const state = material.uniforms.uState.value;
+      const sentiment = material.uniforms.uSentiment.value;
+      
+      // Move lights slightly
+      pointLight1.position.x = 10 + Math.sin(elapsed * 0.5) * 2;
+      pointLight1.position.z = 10 + Math.cos(elapsed * 0.5) * 2;
+      
+      pointLight2.position.y = -5 + Math.sin(elapsed * 0.8) * 3;
+      
+      // Color shifts for Light 2 (Orange/Sentiment reactive)
+      const warmColor = new THREE.Color(0xff4c39); // Iklipse Orange
+      const sentimentShift = new THREE.Color().lerpColors(new THREE.Color(0x4f46e5), warmColor, sentiment);
+      pointLight2.color.lerp(sentimentShift, 0.05);
+
+      // Light 3 Reactivity (Rim/Accent)
+      pointLight3.intensity = THREE.MathUtils.lerp(pointLight3.intensity, (state * 2.0) + 0.2, 0.05);
+      pointLight3.position.x = Math.sin(elapsed * 1.5) * 5;
+      
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+  </script>
+</body>
+</html>
