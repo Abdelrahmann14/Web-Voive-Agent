@@ -143,6 +143,11 @@
       transform: scale(0.95);
     }
     
+    button:focus-visible, a:focus-visible {
+      outline: 2px solid #ff4c39;
+      outline-offset: 4px;
+    }
+    
     .glass-card {
       background: rgba(255, 255, 255, 0.03);
       backdrop-filter: blur(20px);
@@ -299,66 +304,101 @@
 
     /* LIGHT MODE OVERRIDES */
     body.light-mode {
-      background: #D4D4D8;
+      background: #F4F4F5;
       color: #000000;
     }
     body.light-mode .bg-grid {
-      background-image: radial-gradient(rgba(0, 0, 0, 0.2) 1px, transparent 1px);
-      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 70%);
+      background-image: radial-gradient(rgba(0, 0, 0, 0.25) 1.2px, transparent 1.2px);
+      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 75%);
     }
     body.light-mode .bg-mesh {
-      opacity: 0.04;
+      opacity: 0.05;
       background-image: 
-        linear-gradient(45deg, rgba(0,0,0,0.1) 1px, transparent 1px),
-        linear-gradient(-45deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+        linear-gradient(45deg, rgba(0,0,0,0.15) 1.2px, transparent 1.2px),
+        linear-gradient(-45deg, rgba(0,0,0,0.15) 1.2px, transparent 1.2px);
     }
     body.light-mode .logo-shape {
       background: #ff4c39;
     }
     body.light-mode .nav-bar-pill {
-      background: #D4D4D8;
-      border-color: #A1A1AA;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+      background: #FFFFFF;
+      border-color: #D4D4D8;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.06);
     }
     body.light-mode .nav-link {
       color: #27272A;
     }
     body.light-mode .nav-link:hover, body.light-mode .nav-link.active {
       color: #000000;
-      background: rgba(0, 0, 0, 0.08);
+      background: rgba(0, 0, 0, 0.05);
     }
     body.light-mode .theme-toggle-btn {
       background: #FFFFFF;
       border-color: #D4D4D8;
       color: #000000;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
     }
     body.light-mode .iklipse-noise-text {
       color: #52525B;
     }
     body.light-mode .bubble.agent {
       background: #FFFFFF;
-      border-color: #D4D4D8;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      border-color: #E4E4E7;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+    .bubble p {
+      transition: color 1.2s;
     }
     body.light-mode .bubble.agent p {
-      color: #000000;
+      color: #000000 !important;
     }
     body.light-mode .bubble.user p {
-      color: #FFFFFF;
+      color: #000000 !important;
     }
     body.light-mode .bubble.user {
-      background: #ff4c39;
-      border-color: transparent;
-      box-shadow: 0 10px 25px rgba(255, 76, 57, 0.2);
+      background: #FFE4E1; /* Misti Rose - solid light tint */
+      border-color: rgba(255, 76, 57, 0.2);
+      box-shadow: 0 10px 30px rgba(255, 76, 57, 0.08);
     }
     body.light-mode .glass-card {
       background: rgba(255, 255, 255, 0.95);
       border-color: rgba(0, 0, 0, 0.15);
       box-shadow: 0 20px 60px rgba(0,0,0,0.12);
     }
-    body.light-mode #timer, body.light-mode #final-duration, body.light-mode h2 {
-      color: #000000;
+    body.light-mode #timer, 
+    body.light-mode #final-duration, 
+    body.light-mode h2, 
+    body.light-mode #screen-ended p,
+    body.light-mode #screen-ended button[onclick="resetCall()"],
+    body.light-mode #export-container p,
+    body.light-mode #screen-idle p,
+    body.light-mode #confirmation-modal h3,
+    body.light-mode #confirmation-modal p {
+      color: #000000 !important;
+    }
+    body.light-mode #export-field {
+      color: #000000 !important;
+    }
+    body.light-mode #export-field::placeholder {
+      color: #71717A !important;
+    }
+    body.light-mode #final-transcription, 
+    body.light-mode #final-summary {
+      color: #000000 !important;
+    }
+    body.light-mode #screen-ended span:not(.material-symbols-outlined) {
+      color: #000000 !important;
+    }
+    body.light-mode .glass-card div[style*="background:rgba(255,255,255,0.06)"] {
+      background: rgba(0, 0, 0, 0.08) !important;
+    }
+    body.light-mode #confirmation-modal {
+      background: rgba(255, 255, 255, 0.4) !important;
+    }
+    body.light-mode #confirmation-modal button[onclick="cancelEndCall()"] {
+      background: rgba(0, 0, 0, 0.05) !important;
+      border-color: rgba(0, 0, 0, 0.1) !important;
+      color: #52525B !important;
     }
     body.light-mode #speaking-status {
       color: #ff4c39;
@@ -419,13 +459,13 @@
   </div>
 
   <div class="header-wrapper">
-    <a href="https://iklipseworld.com/" class="header-logo" title="IKLIPSE WORLD">
+    <a href="https://iklipseworld.com/" class="header-logo" title="IKLIPSE WORLD" aria-label="Iklipse Home">
       <div class="logo-shape"></div>
     </a>
 
     <div style="display: flex; align-items: center; gap: 24px;">
-      <button class="theme-toggle-btn" onclick="toggleTheme()" data-tooltip="Toggle appearance mode">
-        <span class="material-symbols-outlined" style="font-size: 22px;">light_mode</span>
+      <button class="theme-toggle-btn" onclick="toggleTheme()" data-tooltip="Toggle appearance mode" aria-label="Toggle dark and light theme">
+        <span class="material-symbols-outlined" style="font-size: 22px;" aria-hidden="true">light_mode</span>
       </button>
     </div>
   </div>
@@ -480,8 +520,8 @@
         <p style="color: #71717A; font-size: 15px; line-height: 1.5;">This will terminate the current voice link and finalize your interaction data.</p>
       </div>
       <div style="display: flex; gap: 12px; width: 100%;">
-        <button onclick="cancelEndCall()" style="flex: 1; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #A1A1AA; font-weight: 600; font-family: 'Excon', sans-serif;">Cancel</button>
-        <button onclick="confirmEndSession()" style="flex: 1.5; padding: 16px; border-radius: 16px; background: #ff4c39; border: none; color: white; font-weight: 700; font-family: 'Excon', sans-serif; box-shadow: 0 8px 24px rgba(255,76,57,0.25);">End Session</button>
+        <button onclick="cancelEndCall()" aria-label="Cancel and return to session" style="flex: 1; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #A1A1AA; font-weight: 600; font-family: 'Excon', sans-serif;">Cancel</button>
+        <button onclick="confirmEndSession()" aria-label="Confirm end session" style="flex: 1.5; padding: 16px; border-radius: 16px; background: #ff4c39; border: none; color: white; font-weight: 700; font-family: 'Excon', sans-serif; box-shadow: 0 8px 24px rgba(255,76,57,0.25);">End Session</button>
       </div>
     </div>
   </div>
@@ -492,7 +532,7 @@
       <!-- control area -->
       <div style="position:absolute;bottom:120px;width:100%;
                   display:flex;flex-direction:column;align-items:center;gap:20px">
-        <button id="start-btn" onclick="startCall()" data-tooltip="Initialize voice link" style="
+        <button id="start-btn" onclick="startCall()" data-tooltip="Initialize voice link" aria-label="Start voice interaction" style="
           width:84px;height:84px;border-radius:50%;
           border:1px solid rgba(255,255,255,0.12);
           background:rgba(255,255,255,0.04);
@@ -502,7 +542,7 @@
           transition:all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
           font-family: 'Excon', 'Syne', sans-serif;">
           <span class="material-symbols-outlined" 
-                style="color:white;font-size:32px">mic</span>
+                style="color:white;font-size:32px" aria-hidden="true">mic</span>
         </button>
         <p style="font-size:14px;color:#71717A;font-weight:400;letter-spacing:0.05em;opacity:0.8;font-family: 'Excon', sans-serif;">Press to Connect</p>
       </div>
@@ -529,7 +569,7 @@
           border-radius:24px 24px 24px 4px;
           padding:20px 24px;
           animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards">
-          <p style="font-size:15px;color:#E4E4E7;line-height:1.6">
+          <p style="font-size:15px;line-height:1.6">
             Hi! I'm Ikli, Iklipse's AI assistant. My systems are live and ready to assist you.
           </p>
         </div>
@@ -541,7 +581,7 @@
           border-radius:24px 24px 4px 24px;
           padding:20px 24px;
           animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s both">
-          <p style="font-size:15px;color:#E4E4E7;line-height:1.6">
+          <p style="font-size:15px;line-height:1.6">
             Show me what Iklipse is capable of.
           </p>
         </div>
@@ -553,7 +593,7 @@
           border-radius:24px 24px 24px 4px;
           padding:20px 24px;
           animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both">
-          <p style="font-size:15px;color:#E4E4E7;line-height:1.6">
+          <p style="font-size:15px;line-height:1.6">
             We specialize in advanced AI deployment — from real-time voice agents to complex automation workflows. Should we discuss a specific use case?
           </p>
         </div>
@@ -561,9 +601,9 @@
 
       <!-- speaking status + mic -->
       <div class="controls-container">
-        <p id="speaking-status" style="font-size:12px;color:#ff4c39;font-weight:600;
+        <p id="speaking-status" style="font-size:14px;color:#ff4c39;font-weight:600;
            letter-spacing:0.2em;text-transform:uppercase;font-family:'Excon', sans-serif">Speaking</p>
-        <button onclick="endCall()" data-tooltip="End current session" style="
+        <button onclick="endCall()" data-tooltip="End current session" aria-label="End session" style="
           width:80px;height:80px;border-radius:50%;
           border:1px solid rgba(255,76,57,0.3);
           background:rgba(255,76,57,0.05);
@@ -572,7 +612,7 @@
           box-shadow:0 0 50px rgba(255,76,57,0.1);
           transition:all 0.4s ease;">
           <span class="material-symbols-outlined" 
-                style="color:#ff4c39;font-size:32px">mic</span>
+                style="color:#ff4c39;font-size:32px" aria-hidden="true">mic</span>
         </button>
       </div>
     </div>
@@ -582,69 +622,84 @@
   <div class="ui-layer" id="screen-ended" style="display:none">
     <div style="max-width:500px;width:90%;display:flex;flex-direction:column;align-items:center">
 
-      <!-- checkmark -->
-      <div style="width:80px;height:80px;border-radius:50%;
-           background:rgba(34,197,94,0.08);
-           border:1px solid rgba(34,197,94,0.2);
-           display:flex;align-items:center;justify-content:center;
-           margin-bottom:32px">
-        <span class="material-symbols-outlined" 
-              style="color:#22C55E;font-size:40px">check_circle</span>
-      </div>
-
-      <h2 style="font-size:32px;font-weight:800;color:#FAFAFA;
+      <h2 style="font-size:32px;font-weight:800;
                 margin-top:0;text-align:center;letter-spacing:-0.02em">
-        Session Complete
+        Session Report
       </h2>
       <p style="font-size:16px;color:#71717A;margin-top:12px;text-align:center;font-weight:300">
-        Link terminated successfully. How would you like to proceed?
+        Insight extraction complete. You can export your session data below.
       </p>
 
-      <!-- summary card -->
-      <div class="glass-card" style="width:100%;margin-top:40px;padding:32px">
-        <div style="display:flex;justify-content:space-between;
-                    align-items:center;margin-bottom:20px">
+      <!-- report card -->
+      <div class="glass-card" style="width:100%;margin-top:40px;padding:32px;border-radius:24px;text-align:left;display:flex;flex-direction:column;gap:24px">
+        <!-- Stats Row -->
+        <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="display:flex;align-items:center;gap:12px">
-            <span class="material-symbols-outlined" 
-                  style="color:#52525B;font-size:20px">schedule</span>
-            <span style="font-size:14px;color:#A1A1AA;font-weight:500">Duration</span>
+            <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">timer</span>
+            <span style="font-weight:600;font-size:14px">Duration</span>
           </div>
-          <span id="final-duration" style="font-size:14px;
-                font-weight:700;color:#FAFAFA">0:00</span>
+          <span id="final-duration" style="font-weight:700;font-variant-numeric:tabular-nums;font-size:14px">0:00</span>
         </div>
-        <div style="height:1px;background:rgba(255,255,255,0.06);margin-bottom:20px"></div>
-        <div style="display:flex;justify-content:space-between;
-                    align-items:center">
-          <div style="display:flex;align-items:center;gap:12px">
-            <span class="material-symbols-outlined" 
-                  style="color:#52525B;font-size:20px">chat_bubble</span>
-            <span style="font-size:14px;color:#A1A1AA;font-weight:500">Exchanges</span>
+
+        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
+
+        <!-- Transcription -->
+        <div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">subject</span>
+            <span style="font-weight:600;font-size:14px">Transcription</span>
           </div>
-          <span style="font-size:14px;font-weight:700;color:#FAFAFA">12</span>
+          <p id="final-transcription" style="font-size:13px;color:#A1A1AA;line-height:1.6;max-height:100px;overflow-y:auto;padding-right:8px;font-weight:400">
+            "We discussed the integration of voice agents into specialized enterprise workflows, focusing on low-latency response times and multi-modal interaction capabilities..."
+          </p>
+        </div>
+
+        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
+
+        <!-- Summary -->
+        <div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">auto_awesome</span>
+            <span style="font-weight:600;font-size:14px">Summary</span>
+          </div>
+          <p id="final-summary" style="font-size:13px;color:#A1A1AA;font-style:italic;line-height:1.6;font-weight:400">
+            The session explored technical deployment strategies for AI agents, identifying key performance indicators for voice-based customer support scaling.
+          </p>
         </div>
       </div>
 
-      <!-- book button -->
-      <button style="width:100%;height:64px;margin-top:32px;
-        background:#ff4c39;border:none;border-radius:20px;
-        box-shadow:0 12px 40px rgba(255,76,57,0.3);
-        display:flex;align-items:center;justify-content:center;gap:12px;
-        font-family:'Excon', sans-serif;font-size:16px;font-weight:800;color:white;
-        cursor:pointer;">
-        <span class="material-symbols-outlined" style="font-size:20px">
-          calendar_today
-        </span>
-        Schedule Strategy Session
-      </button>
+      <!-- Export Area -->
+      <div id="export-container" style="width:100%;max-width:480px;margin-top:32px;display:flex;flex-direction:column;align-items:center">
+        <div id="export-options" style="display:flex;justify-content:center;gap:20px;align-items:center">
+          <p style="font-size:12px;color:#71717A;font-weight:600;letter-spacing:0.1em;text-transform:uppercase">Export via:</p>
+          <button onclick="showExportInput('whatsapp')" class="glass-card" data-tooltip="WhatsApp" style="width:56px;height:56px;border-radius:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Export via WhatsApp">
+            <span class="material-symbols-outlined" style="color:#22C55E">chat_bubble</span>
+          </button>
+          <button onclick="showExportInput('email')" class="glass-card" data-tooltip="Email" style="width:56px;height:56px;border-radius:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Export via Email">
+            <span class="material-symbols-outlined" style="color:#ff4c39">mail</span>
+          </button>
+        </div>
+
+        <!-- Dynamic Inputs -->
+        <div id="export-input-area" style="display:none;width:100%">
+          <div class="glass-card" style="display:flex;align-items:center;padding:6px 6px 6px 20px;border-radius:20px;width:100%">
+            <input id="export-field" type="text" placeholder="" style="flex:1;background:transparent;border:none;color:inherit;font-family:inherit;outline:none;font-size:14px">
+            <button onclick="submitExport()" style="background:#ff4c39;border:none;padding:12px 24px;border-radius:14px;color:white;font-weight:700;cursor:pointer;font-family:inherit">Send</button>
+          </div>
+          <button onclick="resetExportOptions()" style="margin-top:16px;background:transparent;border:none;color:#71717A;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">← Back to options</button>
+        </div>
+
+        <p id="export-success" style="display:none;margin-top:12px;color:#ff4c39;font-weight:600;font-size:14px;animation:fadeUp 0.4s ease forwards"></p>
+      </div>
 
       <!-- start again -->
-      <button onclick="resetCall()" style="
-        margin-top:24px;background:transparent;border:none;
+      <button onclick="resetCall()" aria-label="Start a new session" style="
+        margin-top:40px;background:transparent;border:none;
         font-family:'Excon', sans-serif;font-size:14px;color:#52525B;cursor:pointer;
-        font-weight:500;transition:color 0.2s"
-        onmouseover="this.style.color='#FAFAFA'"
+        font-weight:600;transition:all 0.2s"
+        onmouseover="this.style.color='#ff4c39'"
         onmouseout="this.style.color='#52525B'">
-        ← Re-initialize Voice Link
+        ← Start New Session
       </button>
     </div>
   </div>
@@ -723,17 +778,17 @@
         vec3 viewDir = normalize(cameraPosition - vWorldPosition);
         float fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 3.0);
         
-        vec3 idle1 = mix(vec3(0.02, 0.02, 0.04), vec3(0.08, 0.08, 0.1), uTheme); 
-        vec3 idle2 = mix(vec3(0.08, 0.08, 0.12), vec3(0.15, 0.15, 0.18), uTheme); 
+        vec3 idle1 = mix(vec3(0.02, 0.02, 0.04), vec3(0.04, 0.04, 0.06), uTheme); 
+        vec3 idle2 = mix(vec3(0.08, 0.08, 0.12), vec3(0.1, 0.1, 0.15), uTheme); 
         
         vec3 act1 = vec3(1.0, 0.298, 0.223); // Iklipse Orange #ff4c39
-        vec3 act2 = mix(vec3(1.0, 1.0, 1.0), vec3(0.1, 0.1, 0.12), uTheme);     
-        vec3 act3 = mix(vec3(0.0, 0.0, 0.0), vec3(0.05, 0.05, 0.08), uTheme);      
+        vec3 act2 = mix(vec3(1.0, 1.0, 1.0), vec3(0.08, 0.08, 0.1), uTheme);     
+        vec3 act3 = mix(vec3(0.0, 0.0, 0.0), vec3(0.03, 0.03, 0.05), uTheme);      
         
         // Sentiment adjustments
         // uSentiment: 0.0 (Cool/Negative) -> 0.5 (Neutral) -> 1.0 (Positive/Warm)
-        vec3 sentimentWarm = vec3(1.0, 0.5, 0.2); 
-        vec3 sentimentCool = vec3(0.1, 0.3, 0.8);
+        vec3 sentimentWarm = vec3(1.0, 0.75, 0.1); // Vibrant Gold/Orange
+        vec3 sentimentCool = vec3(0.4, 0.1, 1.0);  // Vivid Purple/Indigo
         vec3 sentimentColor = mix(sentimentCool, sentimentWarm, uSentiment);
         
         float t = uTime * 0.2;
@@ -742,8 +797,9 @@
         vec3 idleColor = mix(idle1, idle2, noise * 0.5 + 0.5);
         vec3 activeColor = mix(act1, act2, noise * 0.5 + 0.5);
         
-        // Shift active color based on sentiment
-        activeColor = mix(activeColor, sentimentColor, 0.4);
+        // Intensity of sentiment color on the orb surface increases with uState
+        float sentimentImpact = 0.3 + (uState * 0.4);
+        activeColor = mix(activeColor, sentimentColor, sentimentImpact);
         activeColor = mix(activeColor, act3, sin(uTime * 0.4) * 0.5 + 0.5);
         
         vec3 finalColor = mix(idleColor, activeColor, uState);
@@ -752,13 +808,15 @@
         // In light theme, the glow base needs to be much darker for context
         glowBase = mix(glowBase, vec3(0.02, 0.02, 0.04), uTheme * (1.0 - uState) * 0.8);
         
-        vec3 glow = mix(glowBase, sentimentColor, uState * 0.5);
+        // Glow reflects sentiment more strongly as the session becomes active
+        vec3 glow = mix(glowBase, sentimentColor, uState * 0.75);
         
-        finalColor += glow * fresnel * 1.8;
+        float fresnelBoost = mix(1.8, 2.5, uTheme);
+        finalColor += glow * fresnel * fresnelBoost;
         
-        float specSize = mix(32.0, 24.0, uTheme);
+        float specSize = mix(32.0, 20.0, uTheme); 
         float spec = pow(max(dot(reflect(vec3(-1.0, -1.0, -1.0), vNormal), viewDir), 0.0), specSize);
-        finalColor += vec3(1.0) * spec * 0.4 * (1.0 + uSentiment * 0.5);
+        finalColor += vec3(1.0) * spec * mix(0.4, 0.6, uTheme) * (1.0 + uSentiment * 0.5);
         
         gl_FragColor = vec4(finalColor, 0.9);
       }
@@ -871,6 +929,60 @@
       
       document.getElementById('screen-active').style.display = 'none';
       document.getElementById('screen-ended').style.display = 'flex';
+      
+      // Dynamic transcription placeholder
+      document.getElementById('final-transcription').textContent = 
+        `"${document.getElementById('timer').textContent} session concluded. Main discussion points centered on AI latency management and multi-modal integration."`;
+    }
+
+    let currentExportMethod = '';
+
+    function showExportInput(method) {
+      currentExportMethod = method;
+      const inputArea = document.getElementById('export-input-area');
+      const optionsArea = document.getElementById('export-options');
+      const field = document.getElementById('export-field');
+      const successMsg = document.getElementById('export-success');
+
+      optionsArea.style.display = 'none';
+      successMsg.style.display = 'none';
+      inputArea.style.display = 'block';
+
+      if (method === 'whatsapp') {
+        field.placeholder = "+1 234 567 8900 (Country Code + Number)";
+        field.type = "tel";
+      } else {
+        field.placeholder = "Enter your email address";
+        field.type = "email";
+      }
+      field.value = '';
+      field.focus();
+    }
+
+    function resetExportOptions() {
+      document.getElementById('export-input-area').style.display = 'none';
+      document.getElementById('export-options').style.display = 'flex';
+    }
+
+    function submitExport() {
+      const field = document.getElementById('export-field');
+      const inputArea = document.getElementById('export-input-area');
+      const successMsg = document.getElementById('export-success');
+
+      if (!field.value) return;
+
+      const label = currentExportMethod === 'whatsapp' ? 'WhatsApp' : 'email';
+      const emoji = currentExportMethod === 'whatsapp' ? '📱' : '📧';
+      inputArea.style.display = 'none';
+      successMsg.innerHTML = `Check your ${label} ${emoji}`;
+      successMsg.style.display = 'block';
+
+      setTimeout(() => {
+        if (appState === 'ended') {
+          successMsg.style.display = 'none';
+          document.getElementById('export-options').style.display = 'flex';
+        }
+      }, 3000);
     }
 
     function resetCall() {
@@ -895,9 +1007,9 @@
         icon.textContent = 'dark_mode';
         renderer.setClearColor(0xf4f4f5, 0);
         material.uniforms.uTheme.value = 1.0;
-        pointLight1.intensity = 2.5;
-        pointLight2.intensity = 2.0;
-        pointLight3.intensity = 0.8;
+        pointLight1.intensity = 3.5;
+        pointLight2.intensity = 2.5;
+        pointLight3.intensity = 1.2;
       } else {
         icon.textContent = 'light_mode';
         renderer.setClearColor(0x000000, 0);
