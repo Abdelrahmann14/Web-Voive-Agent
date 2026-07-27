@@ -1,0 +1,8 @@
+# Dependencies for the Vercel Python serverless API (api/index.py -> backend/server.py).
+# Light on purpose — only what the token/summarize/export endpoints need.
+# (The heavy agent deps live in backend/requirements.txt and run on the agent host.)
+fastapi
+livekit-api>=1.0
+google-genai
+requests
+python-dotenv

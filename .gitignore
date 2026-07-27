@@ -1,6 +1,10 @@
 node_modules/
 build/
 dist/
+.vercel/
+.venv/
+backend/.venv/
+__pycache__/
 coverage/
 .DS_Store
 *.log

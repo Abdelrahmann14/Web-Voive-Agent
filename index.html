@@ -98,12 +98,40 @@
       padding: 0 40px;
       display: flex;
       flex-direction: column;
-      justify-content: flex-end;
       gap: 16px;
-      overflow: hidden;
-      mask-image: linear-gradient(to bottom, transparent, black 15%);
+      overflow-y: auto;
+      pointer-events: auto;
+      mask-image: linear-gradient(to bottom, transparent, black 10%);
       transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
     }
+    /* Keep messages pinned to the bottom, but stay scrollable when they overflow
+       (avoids the Chrome flex justify-content:flex-end + overflow scroll bug). */
+    #bubbles-container > :first-child { margin-top: auto; }
+    /* Custom scrollbars — chat + report */
+    #bubbles-container, #final-transcription, #screen-ended {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,76,57,0.6) transparent;
+    }
+    #bubbles-container::-webkit-scrollbar,
+    #final-transcription::-webkit-scrollbar,
+    #screen-ended::-webkit-scrollbar { width: 8px; }
+    #bubbles-container::-webkit-scrollbar-track,
+    #final-transcription::-webkit-scrollbar-track,
+    #screen-ended::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
+    #bubbles-container::-webkit-scrollbar-thumb,
+    #final-transcription::-webkit-scrollbar-thumb,
+    #screen-ended::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, #ff4c39, #ff6f5c);
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    #bubbles-container::-webkit-scrollbar-thumb:hover,
+    #final-transcription::-webkit-scrollbar-thumb:hover,
+    #screen-ended::-webkit-scrollbar-thumb:hover { background: #ff4c39; background-clip: padding-box; }
+    body.light-mode #bubbles-container,
+    body.light-mode #final-transcription,
+    body.light-mode #screen-ended { scrollbar-color: rgba(255,76,57,0.7) transparent; }
 
     #screen-active .timer-container {
       position: absolute;
@@ -134,6 +162,14 @@
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(24px); }
       to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Agent replies "emerge from the orb": start small/blurred near the orb (left),
+       then settle into the transcript. */
+    @keyframes orbEmerge {
+      0%   { opacity: 0; transform: translateX(-180px) translateY(30px) scale(0.35); filter: blur(8px); }
+      55%  { opacity: 1; filter: blur(0); }
+      100% { opacity: 1; transform: translateX(0) translateY(0) scale(1); filter: blur(0); }
     }
 
     button {
@@ -379,6 +415,28 @@
     body.light-mode #export-field {
       color: #000000 !important;
     }
+    body.light-mode #export-input-pill {
+      background: rgba(0,0,0,0.05) !important;
+      border-color: rgba(0,0,0,0.15) !important;
+    }
+    /* Kill Chrome's white/yellow autofill background on the export input */
+    #export-field:-webkit-autofill,
+    #export-field:-webkit-autofill:hover,
+    #export-field:-webkit-autofill:focus,
+    #export-field:-webkit-autofill:active {
+      -webkit-text-fill-color: #ffffff;
+      -webkit-box-shadow: 0 0 0 1000px transparent inset;
+      box-shadow: 0 0 0 1000px transparent inset;
+      caret-color: #ffffff;
+      transition: background-color 9999s ease-in-out 0s;
+    }
+    body.light-mode #export-field:-webkit-autofill,
+    body.light-mode #export-field:-webkit-autofill:hover,
+    body.light-mode #export-field:-webkit-autofill:focus,
+    body.light-mode #export-field:-webkit-autofill:active {
+      -webkit-text-fill-color: #000000;
+      caret-color: #000000;
+    }
     body.light-mode #export-field::placeholder {
       color: #71717A !important;
     }
@@ -619,7 +677,7 @@
   </div>
 
   <!-- SCREEN 3: ENDED -->
-  <div class="ui-layer" id="screen-ended" style="display:none">
+  <div class="ui-layer" id="screen-ended" style="display:none;overflow-y:auto;pointer-events:auto;padding:80px 0">
     <div style="max-width:500px;width:90%;display:flex;flex-direction:column;align-items:center">
 
       <h2 style="font-size:32px;font-weight:800;
@@ -682,7 +740,7 @@
 
         <!-- Dynamic Inputs -->
         <div id="export-input-area" style="display:none;width:100%">
-          <div class="glass-card" style="display:flex;align-items:center;padding:6px 6px 6px 20px;border-radius:20px;width:100%">
+          <div id="export-input-pill" style="display:flex;align-items:center;padding:6px 6px 6px 20px;border-radius:20px;width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14)">
             <input id="export-field" type="text" placeholder="" style="flex:1;background:transparent;border:none;color:inherit;font-family:inherit;outline:none;font-size:14px">
             <button onclick="submitExport()" style="background:#ff4c39;border:none;padding:12px 24px;border-radius:14px;color:white;font-weight:700;cursor:pointer;font-family:inherit">Send</button>
           </div>
@@ -893,13 +951,10 @@
         document.getElementById('timer').textContent = m + ':' + String(s).padStart(2,'0');
       }, 1000);
 
-      const statuses = ['Processing Voice Input', 'Generating Response', 'Thinking', 'Speaking'];
-      let i = 0;
-      const statusInterval = setInterval(() => {
-        if (appState !== 'active') { clearInterval(statusInterval); return; }
-        document.getElementById('speaking-status').textContent = statuses[i % statuses.length];
-        i++;
-      }, 4000);
+      // Real voice pipeline: connect to LiveKit (see src/voice-agent.ts).
+      // Clears the demo bubbles; the agent greets on connect.
+      document.getElementById('speaking-status').textContent = 'Connecting';
+      if (window.__voiceConnect) window.__voiceConnect();
     }
 
     function endCall() {
@@ -913,6 +968,7 @@
 
     function confirmEndSession() {
       document.getElementById('confirmation-modal').style.display = 'none';
+      if (window.__voiceDisconnect) window.__voiceDisconnect();
       appState = 'ended';
       targetIntensity = 0.08;
       targetState = 0.0;
@@ -929,10 +985,34 @@
       
       document.getElementById('screen-active').style.display = 'none';
       document.getElementById('screen-ended').style.display = 'flex';
-      
-      // Dynamic transcription placeholder
-      document.getElementById('final-transcription').textContent = 
-        `"${document.getElementById('timer').textContent} session concluded. Main discussion points centered on AI latency management and multi-modal integration."`;
+
+      // ---- Real session report ----
+      const turns = (window.__getTranscript ? window.__getTranscript() : []) || [];
+      const transcriptEl = document.getElementById('final-transcription');
+      const summaryEl = document.getElementById('final-summary');
+
+      if (!turns.length) {
+        transcriptEl.textContent = 'No speech was recorded in this session.';
+        summaryEl.textContent = 'Nothing to summarize.';
+        return;
+      }
+
+      // Render the real conversation.
+      transcriptEl.innerHTML = turns
+        .map(t => `<strong style="color:#ff4c39">${t.role}:</strong> ${t.text}`)
+        .join('<br><br>');
+
+      // Ask the backend (server-side Gemini) for a real summary.
+      summaryEl.textContent = 'Generating summary…';
+      const plain = turns.map(t => `${t.role}: ${t.text}`).join('\n');
+      fetch('/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: plain }),
+      })
+        .then(r => r.json())
+        .then(d => { summaryEl.textContent = d.summary || 'Summary unavailable.'; })
+        .catch(() => { summaryEl.textContent = 'Summary unavailable (backend not reachable).'; });
     }
 
     let currentExportMethod = '';
@@ -964,25 +1044,99 @@
       document.getElementById('export-options').style.display = 'flex';
     }
 
-    function submitExport() {
+    function buildReportMessage() {
+      const dur = document.getElementById('final-duration').textContent || '0:00';
+      const summary = document.getElementById('final-summary').textContent || '';
+      const turns = (window.__getTranscript ? window.__getTranscript() : []) || [];
+      const tx = turns.map(t => `${t.role}: ${t.text}`).join('\n');
+      return `*Iklipse Voice Session*\n\n⏱ Duration: ${dur}\n\n📝 Summary:\n${summary}\n\n💬 Transcript:\n${tx || '(no speech recorded)'}`;
+    }
+
+    async function submitExport() {
       const field = document.getElementById('export-field');
       const inputArea = document.getElementById('export-input-area');
       const successMsg = document.getElementById('export-success');
+      const sendBtn = inputArea.querySelector('button');
 
       if (!field.value) return;
 
-      const label = currentExportMethod === 'whatsapp' ? 'WhatsApp' : 'email';
-      const emoji = currentExportMethod === 'whatsapp' ? '📱' : '📧';
-      inputArea.style.display = 'none';
-      successMsg.innerHTML = `Check your ${label} ${emoji}`;
-      successMsg.style.display = 'block';
-
-      setTimeout(() => {
-        if (appState === 'ended') {
-          successMsg.style.display = 'none';
-          document.getElementById('export-options').style.display = 'flex';
+      if (currentExportMethod === 'whatsapp') {
+        const original = sendBtn.textContent;
+        sendBtn.textContent = 'Sending…';
+        sendBtn.disabled = true;
+        try {
+          const res = await fetch('/export/whatsapp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: field.value, message: buildReportMessage() }),
+          });
+          const data = await res.json();
+          inputArea.style.display = 'none';
+          if (data.ok) {
+            successMsg.style.color = '#22C55E';
+            successMsg.innerHTML = 'Sent to WhatsApp 📱';
+          } else {
+            successMsg.style.color = '#ff4c39';
+            successMsg.textContent = data.error || 'Failed to send.';
+          }
+          successMsg.style.display = 'block';
+        } catch (e) {
+          inputArea.style.display = 'none';
+          successMsg.style.color = '#ff4c39';
+          successMsg.textContent = 'Backend not reachable.';
+          successMsg.style.display = 'block';
+        } finally {
+          sendBtn.textContent = original;
+          sendBtn.disabled = false;
         }
-      }, 3000);
+        setTimeout(() => {
+          if (appState === 'ended') {
+            successMsg.style.display = 'none';
+            successMsg.style.color = '#ff4c39';
+            document.getElementById('export-options').style.display = 'flex';
+          }
+        }, 5000);
+        return;
+      }
+
+      // Email path (SMTP app password on the backend)
+      {
+        const original = sendBtn.textContent;
+        sendBtn.textContent = 'Sending…';
+        sendBtn.disabled = true;
+        try {
+          const res = await fetch('/export/email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: field.value, message: buildReportMessage() }),
+          });
+          const data = await res.json();
+          inputArea.style.display = 'none';
+          if (data.ok) {
+            successMsg.style.color = '#22C55E';
+            successMsg.innerHTML = 'Sent to your email 📧';
+          } else {
+            successMsg.style.color = '#ff4c39';
+            successMsg.textContent = data.error || 'Failed to send.';
+          }
+          successMsg.style.display = 'block';
+        } catch (e) {
+          inputArea.style.display = 'none';
+          successMsg.style.color = '#ff4c39';
+          successMsg.textContent = 'Backend not reachable.';
+          successMsg.style.display = 'block';
+        } finally {
+          sendBtn.textContent = original;
+          sendBtn.disabled = false;
+        }
+        setTimeout(() => {
+          if (appState === 'ended') {
+            successMsg.style.display = 'none';
+            successMsg.style.color = '#ff4c39';
+            document.getElementById('export-options').style.display = 'flex';
+          }
+        }, 5000);
+      }
     }
 
     function resetCall() {
@@ -1091,5 +1245,8 @@
       camera.updateProjectionMatrix();
     });
   </script>
+
+  <!-- LiveKit voice agent integration (Deepgram STT / Gemini LLM / ElevenLabs TTS) -->
+  <script type="module" src="/src/voice-agent.ts"></script>
 </body>
 </html>
