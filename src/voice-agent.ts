@@ -23,9 +23,73 @@ let room: Room | null = null;
 let localIdentity = '';
 
 // Bubble/transcript state, keyed by transcription segment id (dedupes interim vs final).
-type Segment = { el: HTMLElement; isUser: boolean; text: string; order: number };
+// `out` is the element we write text into; agent bubbles reveal it with a typewriter
+// (see the tick loop) so words appear in step with the voice instead of all at once.
+type Segment = {
+  el: HTMLElement;
+  out: HTMLElement;         // text sink (a <span> for agent, the <p> for user)
+  cursor: HTMLElement | null;
+  isUser: boolean;
+  text: string;            // full text so far (used for the report + typewriter target)
+  order: number;
+  shown: number;           // chars currently revealed (agent typewriter)
+  ended: boolean;          // stream for this segment finished
+};
 const segments = new Map<string, Segment>();
 let order = 0;
+
+// ---- Typewriter (agent bubbles) -------------------------------------------
+// Reveal agent text at a natural pace, speeding up when a lot is buffered so the
+// caption never trails the voice by more than ~1s. One shared rAF loop drives all
+// active segments.
+const typing = new Set<Segment>();
+let rafId = 0;
+let lastTs = 0;
+
+function tick(ts: number) {
+  if (!lastTs) lastTs = ts;
+  const dt = Math.min(0.05, (ts - lastTs) / 1000); // clamp big gaps (tab switch)
+  lastTs = ts;
+
+  for (const seg of typing) {
+    if (seg.shown >= seg.text.length) {
+      if (seg.ended) {
+        typing.delete(seg);
+        if (seg.cursor) { seg.cursor.remove(); seg.cursor = null; }
+      }
+      continue;
+    }
+    const remaining = seg.text.length - seg.shown;
+    // ~45 chars/s baseline; ramp up with backlog (cap 700) so it stays near the audio.
+    const perSec = Math.min(700, Math.max(45, remaining * 3));
+    const step = Math.max(1, Math.round(perSec * dt));
+    seg.shown = Math.min(seg.text.length, seg.shown + step);
+    seg.out.textContent = seg.text.slice(0, seg.shown);
+  }
+
+  const c = bubblesContainer();
+  if (c) c.scrollTop = c.scrollHeight;
+
+  if (typing.size) {
+    rafId = requestAnimationFrame(tick);
+  } else {
+    rafId = 0;
+    lastTs = 0;
+  }
+}
+
+function ensureTyping() {
+  if (!rafId) rafId = requestAnimationFrame(tick);
+}
+
+/** Mark an agent segment's stream as done so its caret clears once text catches up. */
+function finishSegment(segId: string) {
+  const seg = segments.get(segId);
+  if (seg && !seg.isUser) {
+    seg.ended = true;
+    ensureTyping();
+  }
+}
 
 // ---- UI helpers -----------------------------------------------------------
 
@@ -43,6 +107,9 @@ function resetTranscript() {
   if (c) c.innerHTML = '';
   segments.clear();
   order = 0;
+  typing.clear();
+  if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  lastTs = 0;
 }
 
 function upsertSegment(segId: string, text: string, isUser: boolean) {
@@ -76,16 +143,34 @@ function upsertSegment(segId: string, text: string, isUser: boolean) {
       : 'align-self:flex-start;max-width:85%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:24px 24px 24px 4px;padding:20px 24px;transform-origin:left center;animation:orbEmerge 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards';
     const p = document.createElement('p');
     p.style.cssText = 'font-size:15px;line-height:1.6';
+
+    let out: HTMLElement;
+    let cursor: HTMLElement | null = null;
+    if (isUser) {
+      out = p; // user transcript shows live, no typewriter
+    } else {
+      // Agent: a text span the typewriter grows, plus a blinking caret.
+      out = document.createElement('span');
+      cursor = document.createElement('span');
+      cursor.className = 'typing-cursor';
+      cursor.setAttribute('aria-hidden', 'true');
+      p.appendChild(out);
+      p.appendChild(cursor);
+    }
     el.appendChild(p);
     container.appendChild(el);
-    seg = { el, isUser, text: '', order: order++ };
+    seg = { el, out, cursor, isUser, text: '', order: order++, shown: 0, ended: false };
     segments.set(segId, seg);
   }
 
   seg.text = clean;
-  const p = seg.el.querySelector('p');
-  if (p) p.textContent = clean;
-  container.scrollTop = container.scrollHeight;
+  if (isUser) {
+    seg.out.textContent = clean;             // instant for the caller's own words
+    container.scrollTop = container.scrollHeight;
+  } else {
+    typing.add(seg);                         // let the typewriter reveal it in step with audio
+    ensureTyping();
+  }
 }
 
 /** Ordered, de-duplicated transcript for the End-screen report. */
@@ -189,6 +274,7 @@ async function connect() {
         text += chunk;
         upsertSegment(segId, text, isUser);
       }
+      finishSegment(segId); // stream done — let the caret clear once text catches up
     });
   } catch (e) {
     console.warn('transcription handler not registered', e);

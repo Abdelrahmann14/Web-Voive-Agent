@@ -623,6 +623,24 @@
       #screen-ended { padding: 48px 0; }
       #screen-active .timer-container { top: 70px; }
     }
+
+    /* Typewriter caret — blinks while Ikli's words stream in, in step with the
+       voice; removed the moment the line finishes. */
+    .typing-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.05em;
+      margin-left: 1px;
+      background: currentColor;
+      border-radius: 1px;
+      vertical-align: -0.12em;
+      opacity: 0.8;
+      animation: tw-blink 1s steps(1, end) infinite;
+    }
+    @keyframes tw-blink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .typing-cursor { animation: none; }
+    }
   </style>
 </head>
 <body>
