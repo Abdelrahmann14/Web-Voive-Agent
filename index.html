@@ -555,6 +555,74 @@
       visibility: visible;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* ============================================================
+       RESPONSIVE — phones & tablets
+       Desktop = orb shifted left + a 45% chat panel on the right.
+       On narrow screens that split can't breathe, so we STACK:
+       the orb sits small up top (positioned from JS) and the chat /
+       timer / controls span the full width beneath it.
+       ============================================================ */
+    @media (max-width: 768px) {
+      .header-wrapper { padding: 22px 20px; }
+      .theme-toggle-btn { width: 46px; height: 46px; border-radius: 14px; }
+      .logo-shape { width: 44px; height: 20px; }
+
+      .content-max-width { max-width: 100%; }
+
+      /* Active call: full-width stacked layout */
+      #bubbles-container {
+        top: 43%;
+        right: 0;
+        left: 0;
+        width: 100%;
+        max-width: 100%;
+        bottom: 168px;
+        padding: 0 20px;
+      }
+      #screen-active .timer-container {
+        top: 86px;
+        right: 0;
+        left: 0;
+        width: 100%;
+      }
+      #screen-active .controls-container {
+        bottom: 44px;
+        right: 0;
+        left: 0;
+        width: 100%;
+      }
+
+      /* Idle: lift the connect button off the bottom edge */
+      #screen-idle .content-max-width > div { bottom: 88px; }
+
+      /* Report screen */
+      #screen-ended { padding: 72px 0; }
+      .preloader-text { font-size: 26px; }
+    }
+
+    @media (max-width: 480px) {
+      .header-wrapper { padding: 16px 14px; }
+
+      #bubbles-container { top: 41%; bottom: 150px; padding: 0 14px; }
+      .bubble { max-width: 90% !important; }
+
+      #screen-active .controls-container { bottom: 34px; }
+      #screen-active .controls-container button { width: 68px !important; height: 68px !important; }
+
+      #start-btn { width: 74px !important; height: 74px !important; }
+
+      #screen-ended h2 { font-size: 26px !important; }
+      #screen-ended .glass-card { padding: 22px !important; }
+      #export-options { flex-wrap: wrap; gap: 14px !important; }
+      .preloader-text { font-size: 22px; }
+    }
+
+    /* Short / landscape phones: keep the report scrollable, trim top gap */
+    @media (max-height: 560px) {
+      #screen-ended { padding: 48px 0; }
+      #screen-active .timer-container { top: 70px; }
+    }
   </style>
 </head>
 <body>
@@ -821,7 +889,13 @@
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
-    camera.position.z = 8; // Orb moved slightly back for desktop
+    // Pull the camera back on small screens so the orb never overflows a
+    // narrow (portrait) viewport. Desktop keeps it closer.
+    const isMobile = () => window.innerWidth <= 768;
+    function applyResponsiveCamera() {
+      camera.position.z = isMobile() ? 11 : 8;
+    }
+    applyResponsiveCamera();
 
     // Lights
     const ambientLight = new THREE.AmbientLight(0x404060, 1.0);
@@ -976,14 +1050,27 @@
       targetSentiment = THREE.MathUtils.clamp(val, 0, 1);
     };
 
+    // Place the orb for an active call. Desktop: shove it left so the chat
+    // panel sits on the right. Mobile: keep it centered, small, and up top so
+    // the full-width chat can stack beneath it (see the @media rules).
+    function positionOrbForCall() {
+      if (isMobile()) {
+        targetX = 0.0;
+        targetY = 2.6;
+        targetScale = 0.6;
+      } else {
+        targetX = -3.5;
+        targetY = 0.0;
+        targetScale = 1.05;
+      }
+    }
+
     function startCall() {
       appState = 'active';
       targetIntensity = 0.6;
       targetState = 1.0;
       targetRotSpeed = 0.012;
-      targetX = -3.5; // Move further to the left
-      targetY = 0.0; 
-      targetScale = 1.05; // Slightly smaller for split view
+      positionOrbForCall(); // desktop: shift left for split; mobile: small, up top
       glowMat.color.setHex(0xff4c39);
       
       document.getElementById('screen-idle').style.display = 'none';
@@ -1288,7 +1375,10 @@
     window.addEventListener('resize', () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
+      applyResponsiveCamera();          // re-pull the camera for the new width
       camera.updateProjectionMatrix();
+      // If a call is live, re-place the orb for the new orientation/size.
+      if (appState === 'active') positionOrbForCall();
     });
   </script>
 
