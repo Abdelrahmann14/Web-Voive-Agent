@@ -338,88 +338,144 @@
       transition: all 0.8s cubic-bezier(0.8, 0, 0.2, 1);
     }
 
-    /* LIGHT MODE OVERRIDES */
-    body.light-mode {
-      background: #F4F4F5;
-      color: #000000;
+    /* ============================================================
+       SEMANTIC THEME TOKENS
+       Dark is the source of truth. Light is its counterpart — same roles,
+       same hierarchy/weight, rebalanced for a light canvas (NOT inverted).
+       Depth: dark = lighter surfaces + subtle borders; light = raised
+       surfaces + soft shadows + balanced borders.
+       ============================================================ */
+    :root {
+      /* Dark reference (dark components use inline values; tokens document the system) */
+      --bg: #000000;
+      --surface: rgba(255,255,255,0.03);   /* raised surface  */
+      --surface-2: rgba(255,255,255,0.05); /* elevated        */
+      --overlay: #0D0D0D;                  /* modal/tooltip   */
+      --border: rgba(255,255,255,0.08);
+      --border-strong: rgba(255,255,255,0.14);
+      --divider: rgba(255,255,255,0.06);
+      --text: #FFFFFF;        /* primary   */
+      --text-2: #A1A1AA;      /* secondary */
+      --text-muted: #71717A;  /* muted     */
+      --text-faint: #52525B;  /* faint     */
+      --accent: #ff4c39;
+      --user-tint: rgba(99,102,241,0.05);
+      --user-border: rgba(99,102,241,0.10);
+      --user-shadow: none;
+      --shadow-sm: none;
+      --shadow-md: none;
+      --shadow-lg: none;
     }
+
+    /* LIGHT THEME — token counterpart of the dark reference */
+    body.light-mode {
+      --bg: #F4F4F5;                       /* page (not pure white)     */
+      --surface: #FFFFFF;                  /* raised surface            */
+      --surface-2: #FFFFFF;                /* elevated                  */
+      --overlay: #FFFFFF;                  /* modal/tooltip/popover     */
+      --border: rgba(24,24,27,0.10);
+      --border-strong: rgba(24,24,27,0.16);
+      --divider: rgba(24,24,27,0.08);
+      --text: #18181B;        /* primary (not pure black) */
+      --text-2: #52525B;      /* secondary */
+      --text-muted: #71717A;  /* muted     */
+      --text-faint: #A1A1AA;  /* faint     */
+      --accent: #ff4c39;
+      --user-tint: #EEF0FE;                /* indigo tint — mirrors dark user bubble */
+      --user-border: rgba(99,102,241,0.22);
+      --user-shadow: 0 10px 30px rgba(99,102,241,0.10);
+      /* Depth via soft shadows (light only) */
+      --shadow-sm: 0 4px 16px rgba(24,24,27,0.06);
+      --shadow-md: 0 10px 30px rgba(24,24,27,0.08);
+      --shadow-lg: 0 24px 60px rgba(24,24,27,0.12);
+
+      background: var(--bg);
+      color: var(--text);
+    }
+
     body.light-mode .bg-grid {
-      background-image: radial-gradient(rgba(0, 0, 0, 0.25) 1.2px, transparent 1.2px);
+      background-image: radial-gradient(rgba(24,24,27,0.22) 1.2px, transparent 1.2px);
       mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 75%);
     }
     body.light-mode .bg-mesh {
       opacity: 0.05;
-      background-image: 
-        linear-gradient(45deg, rgba(0,0,0,0.15) 1.2px, transparent 1.2px),
-        linear-gradient(-45deg, rgba(0,0,0,0.15) 1.2px, transparent 1.2px);
+      background-image:
+        linear-gradient(45deg, rgba(24,24,27,0.12) 1.2px, transparent 1.2px),
+        linear-gradient(-45deg, rgba(24,24,27,0.12) 1.2px, transparent 1.2px);
     }
-    body.light-mode .logo-shape {
-      background: #ff4c39;
-    }
+    body.light-mode .logo-shape { background: var(--accent); }
+
+    /* Pill / control surfaces (nav, theme toggle) — same elevation both themes */
     body.light-mode .nav-bar-pill {
-      background: #FFFFFF;
-      border-color: #D4D4D8;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.06);
+      background: var(--surface);
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-md);
     }
-    body.light-mode .nav-link {
-      color: #27272A;
-    }
-    body.light-mode .nav-link:hover, body.light-mode .nav-link.active {
-      color: #000000;
-      background: rgba(0, 0, 0, 0.05);
+    body.light-mode .nav-link { color: var(--text-2); }
+    body.light-mode .nav-link:hover,
+    body.light-mode .nav-link.active {
+      color: var(--text);
+      background: rgba(24,24,27,0.05);
     }
     body.light-mode .theme-toggle-btn {
-      background: #FFFFFF;
-      border-color: #D4D4D8;
-      color: #000000;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      background: var(--surface);
+      border-color: var(--border-strong);
+      color: var(--text);
+      box-shadow: var(--shadow-sm);
     }
-    body.light-mode .iklipse-noise-text {
-      color: #52525B;
+    body.light-mode .iklipse-noise-text { color: var(--text-2); }
+
+    /* Elevated card (report / modal card) */
+    body.light-mode .glass-card {
+      background: var(--surface);
+      border-color: var(--border);
+      box-shadow: var(--shadow-lg);
     }
+    body.light-mode .glass-card div[style*="background:rgba(255,255,255,0.06)"] {
+      background: var(--divider) !important;   /* dividers inside the card */
+    }
+
+    /* Chat bubbles — agent = neutral surface, user = indigo tint (mirrors dark) */
+    .bubble p { transition: color 1.2s; }
     body.light-mode .bubble.agent {
-      background: #FFFFFF;
-      border-color: #E4E4E7;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-    }
-    .bubble p {
-      transition: color 1.2s;
-    }
-    body.light-mode .bubble.agent p {
-      color: #000000 !important;
-    }
-    body.light-mode .bubble.user p {
-      color: #000000 !important;
+      background: var(--surface);
+      border-color: var(--border);
+      box-shadow: var(--shadow-md);
     }
     body.light-mode .bubble.user {
-      background: #FFE4E1; /* Misti Rose - solid light tint */
-      border-color: rgba(255, 76, 57, 0.2);
-      box-shadow: 0 10px 30px rgba(255, 76, 57, 0.08);
+      background: var(--user-tint);
+      border-color: var(--user-border);
+      box-shadow: var(--user-shadow);
     }
-    body.light-mode .glass-card {
-      background: rgba(255, 255, 255, 0.95);
-      border-color: rgba(0, 0, 0, 0.15);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.12);
-    }
-    body.light-mode #timer, 
-    body.light-mode #final-duration, 
-    body.light-mode h2, 
-    body.light-mode #screen-ended p,
-    body.light-mode #screen-ended button[onclick="resetCall()"],
-    body.light-mode #export-container p,
-    body.light-mode #screen-idle p,
+    body.light-mode .bubble.agent p,
+    body.light-mode .bubble.user p { color: var(--text) !important; }
+
+    /* Text hierarchy — mirror dark's primary/secondary (never flatten to black) */
+    body.light-mode h2,
+    body.light-mode #timer,
+    body.light-mode #final-duration,
     body.light-mode #confirmation-modal h3,
-    body.light-mode #confirmation-modal p {
-      color: #000000 !important;
+    body.light-mode #screen-ended span:not(.material-symbols-outlined) {
+      color: var(--text) !important;
     }
-    body.light-mode #export-field {
-      color: #000000 !important;
+    body.light-mode #screen-ended p,
+    body.light-mode #screen-idle p,
+    body.light-mode #export-container p,
+    body.light-mode #confirmation-modal p,
+    body.light-mode #final-transcription,
+    body.light-mode #final-summary {
+      color: var(--text-2) !important;
     }
+
+    /* Inputs */
     body.light-mode #export-input-pill {
-      background: rgba(0,0,0,0.05) !important;
-      border-color: rgba(0,0,0,0.15) !important;
+      background: rgba(24,24,27,0.04) !important;
+      border-color: var(--border) !important;
     }
-    /* Kill Chrome's white/yellow autofill background on the export input */
+    body.light-mode #export-field { color: var(--text) !important; }
+    body.light-mode #export-field::placeholder { color: var(--text-muted) !important; }
+
+    /* Kill Chrome's autofill background; base = dark, light overrides text colour */
     #export-field:-webkit-autofill,
     #export-field:-webkit-autofill:hover,
     #export-field:-webkit-autofill:focus,
@@ -434,42 +490,31 @@
     body.light-mode #export-field:-webkit-autofill:hover,
     body.light-mode #export-field:-webkit-autofill:focus,
     body.light-mode #export-field:-webkit-autofill:active {
-      -webkit-text-fill-color: #000000;
-      caret-color: #000000;
+      -webkit-text-fill-color: #18181B;
+      caret-color: #18181B;
     }
-    body.light-mode #export-field::placeholder {
-      color: #71717A !important;
-    }
-    body.light-mode #final-transcription, 
-    body.light-mode #final-summary {
-      color: #000000 !important;
-    }
-    body.light-mode #screen-ended span:not(.material-symbols-outlined) {
-      color: #000000 !important;
-    }
-    body.light-mode .glass-card div[style*="background:rgba(255,255,255,0.06)"] {
-      background: rgba(0, 0, 0, 0.08) !important;
-    }
+
+    /* Overlay: confirmation modal */
     body.light-mode #confirmation-modal {
-      background: rgba(255, 255, 255, 0.4) !important;
+      background: rgba(244,244,245,0.6) !important;   /* frosted light scrim */
     }
     body.light-mode #confirmation-modal button[onclick="cancelEndCall()"] {
-      background: rgba(0, 0, 0, 0.05) !important;
-      border-color: rgba(0, 0, 0, 0.1) !important;
-      color: #52525B !important;
+      background: rgba(24,24,27,0.05) !important;
+      border-color: var(--border) !important;
+      color: var(--text-2) !important;
     }
+
+    /* Accent + primary action button */
     body.light-mode #speaking-status {
-      color: #ff4c39;
-      text-shadow: 0 2px 4px rgba(255, 76, 57, 0.1);
+      color: var(--accent);
+      text-shadow: 0 2px 4px rgba(255,76,57,0.10);
     }
     body.light-mode #start-btn {
-      background: #FFFFFF;
-      border-color: #D4D4D8;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.12);
+      background: var(--surface);
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-lg);
     }
-    body.light-mode #start-btn .material-symbols-outlined {
-      color: #000000 !important;
-    }
+    body.light-mode #start-btn .material-symbols-outlined { color: var(--text) !important; }
 
     /* CUSTOM TOOLTIP SYSTEM */
     [data-tooltip] {
@@ -499,10 +544,10 @@
       font-family: 'Excon', sans-serif;
     }
     body.light-mode [data-tooltip]::after {
-      background: #FFFFFF;
-      color: #000000;
-      border: 1px solid #E4E4E7;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      background: var(--overlay);
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
     }
     [data-tooltip]:hover::after {
       opacity: 1;
