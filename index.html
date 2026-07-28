@@ -383,11 +383,12 @@
       --accent: #ff4c39;
       --user-tint: #EEF0FE;                /* indigo tint — mirrors dark user bubble */
       --user-border: rgba(99,102,241,0.22);
-      --user-shadow: 0 10px 30px rgba(99,102,241,0.10);
-      /* Depth via soft shadows (light only) */
-      --shadow-sm: 0 4px 16px rgba(24,24,27,0.06);
-      --shadow-md: 0 10px 30px rgba(24,24,27,0.08);
-      --shadow-lg: 0 24px 60px rgba(24,24,27,0.12);
+      --user-shadow: none;   /* bubbles repeat + sit over animating canvas — border only */
+      /* Depth via soft shadows (light only). Small blur radii = cheap paint over the
+         per-frame WebGL canvas. Large blur (60px) re-rasterizes every frame → slow. */
+      --shadow-sm: 0 2px 8px rgba(24,24,27,0.06);
+      --shadow-md: 0 6px 16px rgba(24,24,27,0.08);
+      --shadow-lg: 0 12px 28px rgba(24,24,27,0.12);
 
       background: var(--bg);
       color: var(--text);
@@ -440,7 +441,7 @@
     body.light-mode .bubble.agent {
       background: var(--surface);
       border-color: var(--border);
-      box-shadow: var(--shadow-md);
+      box-shadow: none;   /* repeats per message over animating canvas — border only */
     }
     body.light-mode .bubble.user {
       background: var(--user-tint);
