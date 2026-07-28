@@ -43,7 +43,7 @@ load_dotenv()
 
 # Fixed first-time greeting — pre-rendered once at startup so it plays instantly
 # (no live TTS synthesis on the call's critical path).
-FIXED_GREETING = "Hey! I'm Ikli, the AI consultant for Iklipse. Who am I chatting with?"
+FIXED_GREETING = "Hey! I'm Ikli, from Iklipse. Who am I talking to?"
 GREETING_SR = 24000  # ElevenLabs pcm_24000
 
 
