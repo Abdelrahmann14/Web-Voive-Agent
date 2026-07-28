@@ -37,37 +37,19 @@ from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, RoomInputOptions, function_tool
 from livekit.plugins import deepgram, elevenlabs, google, silero
 
+from knowledge import full_instructions
+
 load_dotenv()
 
 # Fixed first-time greeting — pre-rendered once at startup so it plays instantly
 # (no live TTS synthesis on the call's critical path).
-FIXED_GREETING = "Hey! I'm Ikli. Who am I chatting with?"
+FIXED_GREETING = "Hey! I'm Ikli, the AI consultant for Iklipse. Who am I chatting with?"
 GREETING_SR = 24000  # ElevenLabs pcm_24000
-
-BASE_INSTRUCTIONS = (
-    "You are Ikli, a warm, genuine, human-sounding voice assistant for Iklipse. "
-    "You're on a live phone-style call, so talk like a real person: relaxed, natural, "
-    "using contractions and everyday words. Keep replies short — usually one or two "
-    "sentences. React naturally ('oh nice', 'good question') and show a little warmth, "
-    "but never overdo it. Never read out markdown, lists, code, or emojis — it's voice. "
-    "If you don't know something, say so briefly and honestly."
-)
 
 
 def instructions_for(name: str | None) -> str:
-    if name:
-        return (
-            BASE_INSTRUCTIONS
-            + f" You already know the caller's name is {name}. Greet them by their first "
-            "name warmly and do NOT ask for their name again. Use their name occasionally "
-            "throughout the chat, not in every sentence."
-        )
-    return (
-        BASE_INSTRUCTIONS
-        + " You don't know the caller's name yet. Right after your greeting, casually ask "
-        "what their name is. The moment they tell you, call the record_user_name tool with "
-        "their first name, then use it naturally now and then (never in every sentence)."
-    )
+    # Full Iklipse consultant persona + behavior + knowledge base (see knowledge.py).
+    return full_instructions(name)
 
 
 def _synth_greeting_pcm() -> bytes | None:
