@@ -46,6 +46,17 @@ load_dotenv()
 FIXED_GREETING = "Hey! I'm Ikli, from Iklipse. Who am I talking to?"
 GREETING_SR = 24000  # ElevenLabs pcm_24000
 
+# Deepgram nova-3 Keyterm Prompting (English only): boost brand + domain words so
+# the STT stops mishearing them (e.g. "Iklipse"/"Ikli" transcribed as "Eclipse").
+KEYTERMS = [
+    "Iklipse", "Ikli", "Digiredo", "Freyusion",
+    "AI production", "AI-infused production", "brand experiences",
+    "social media management", "post-production", "video editing",
+    "digital marketing", "SEO", "media buying", "motion design", "VFX",
+    "color grading", "virtual influencer", "Webflow",
+    "Nabil", "Reem", "Cast your shadow",
+]
+
 
 def instructions_for(name: str | None) -> str:
     # Full Iklipse consultant persona + behavior + knowledge base (see knowledge.py).
@@ -99,18 +110,23 @@ def prewarm(proc: agents.JobProcess):
 
 def build_session(ctx: agents.JobContext) -> AgentSession:
     vad = ctx.proc.userdata.get("vad") or silero.VAD.load(min_silence_duration=0.2)
+    dg_model = os.environ.get("DEEPGRAM_MODEL", "nova-3")
+    stt_kwargs = dict(
+        model=dg_model,
+        language="en",            # English only — no language detection latency
+        interim_results=True,
+        smart_format=True,
+        punctuate=True,
+        no_delay=True,            # emit finals without extra hold
+        endpointing_ms=60,        # was 25 (too aggressive — clipped trailing words)
+        filler_words=False,
+        api_key=os.environ.get("DEEPGRAM_API_KEY"),
+    )
+    # Keyterm prompting is a nova-3 (English) feature; only send it on nova-3.
+    if dg_model.startswith("nova-3"):
+        stt_kwargs["keyterms"] = KEYTERMS
     return AgentSession(
-        stt=deepgram.STT(
-            model=os.environ.get("DEEPGRAM_MODEL", "nova-3"),
-            language="en",            # English only — no language detection latency
-            interim_results=True,
-            smart_format=True,
-            punctuate=True,
-            no_delay=True,            # emit finals without extra hold
-            endpointing_ms=25,        # fast end-of-speech
-            filler_words=False,
-            api_key=os.environ.get("DEEPGRAM_API_KEY"),
-        ),
+        stt=deepgram.STT(**stt_kwargs),
         llm=google.LLM(              # UNCHANGED per requirement
             model=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-exp"),
             api_key=os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"),
