@@ -7,7 +7,7 @@ same-origin endpoints for the Vercel-hosted frontend:  /token, /summarize,
 
 NOTE: the LiveKit *agent worker* is NOT here. Vercel functions are short-lived
 and cannot hold the agent's persistent WebSocket + real-time audio. Deploy the
-agent separately (see DEPLOY.md — LiveKit Cloud Agents recommended).
+agent separately (see DEPLOY.md, LiveKit Cloud Agents recommended).
 """
 import os
 import sys

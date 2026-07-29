@@ -107,7 +107,7 @@
     /* Keep messages pinned to the bottom, but stay scrollable when they overflow
        (avoids the Chrome flex justify-content:flex-end + overflow scroll bug). */
     #bubbles-container > :first-child { margin-top: auto; }
-    /* Custom scrollbars — chat + report */
+    /* Custom scrollbars, chat + report */
     #bubbles-container, #final-transcription, #screen-ended {
       scrollbar-width: thin;
       scrollbar-color: rgba(255,76,57,0.6) transparent;
@@ -340,7 +340,7 @@
 
     /* ============================================================
        SEMANTIC THEME TOKENS
-       Dark is the source of truth. Light is its counterpart — same roles,
+       Dark is the source of truth. Light is its counterpart, same roles,
        same hierarchy/weight, rebalanced for a light canvas (NOT inverted).
        Depth: dark = lighter surfaces + subtle borders; light = raised
        surfaces + soft shadows + balanced borders.
@@ -367,7 +367,7 @@
       --shadow-lg: none;
     }
 
-    /* LIGHT THEME — token counterpart of the dark reference */
+    /* LIGHT THEME, token counterpart of the dark reference */
     body.light-mode {
       --bg: #F4F4F5;                       /* page (not pure white)     */
       --surface: #FFFFFF;                  /* raised surface            */
@@ -381,9 +381,9 @@
       --text-muted: #71717A;  /* muted     */
       --text-faint: #A1A1AA;  /* faint     */
       --accent: #ff4c39;
-      --user-tint: #EEF0FE;                /* indigo tint — mirrors dark user bubble */
+      --user-tint: #EEF0FE;                /* indigo tint, mirrors dark user bubble */
       --user-border: rgba(99,102,241,0.22);
-      --user-shadow: none;   /* bubbles repeat + sit over animating canvas — border only */
+      --user-shadow: none;   /* bubbles repeat + sit over animating canvas, border only */
       /* Depth via soft shadows (light only). Small blur radii = cheap paint over the
          per-frame WebGL canvas. Large blur (60px) re-rasterizes every frame → slow. */
       --shadow-sm: 0 2px 8px rgba(24,24,27,0.06);
@@ -406,7 +406,7 @@
     }
     body.light-mode .logo-shape { background: var(--accent); }
 
-    /* Pill / control surfaces (nav, theme toggle) — same elevation both themes */
+    /* Pill / control surfaces (nav, theme toggle), same elevation both themes */
     body.light-mode .nav-bar-pill {
       background: var(--surface);
       border-color: var(--border-strong);
@@ -436,12 +436,12 @@
       background: var(--divider) !important;   /* dividers inside the card */
     }
 
-    /* Chat bubbles — agent = neutral surface, user = indigo tint (mirrors dark) */
+    /* Chat bubbles, agent = neutral surface, user = indigo tint (mirrors dark) */
     .bubble p { transition: color 1.2s; }
     body.light-mode .bubble.agent {
       background: var(--surface);
       border-color: var(--border);
-      box-shadow: none;   /* repeats per message over animating canvas — border only */
+      box-shadow: none;   /* repeats per message over animating canvas, border only */
     }
     body.light-mode .bubble.user {
       background: var(--user-tint);
@@ -451,7 +451,7 @@
     body.light-mode .bubble.agent p,
     body.light-mode .bubble.user p { color: var(--text) !important; }
 
-    /* Text hierarchy — mirror dark's primary/secondary (never flatten to black) */
+    /* Text hierarchy, mirror dark's primary/secondary (never flatten to black) */
     body.light-mode h2,
     body.light-mode #timer,
     body.light-mode #final-duration,
@@ -470,14 +470,14 @@
 
     /* Inputs */
     body.light-mode #export-input-pill,
-    body.light-mode #phone-input-pill {
+    body.light-mode #collect-input-pill {
       background: rgba(24,24,27,0.04) !important;
       border-color: var(--border) !important;
     }
     body.light-mode #export-field,
-    body.light-mode #phone-field { color: var(--text) !important; }
+    body.light-mode #collect-field { color: var(--text) !important; }
     body.light-mode #export-field::placeholder,
-    body.light-mode #phone-field::placeholder { color: var(--text-muted) !important; }
+    body.light-mode #collect-field::placeholder { color: var(--text-muted) !important; }
 
     /* Kill Chrome's autofill background; base = dark, light overrides text colour */
     #export-field:-webkit-autofill,
@@ -560,7 +560,7 @@
     }
 
     /* ============================================================
-       RESPONSIVE — phones & tablets
+       RESPONSIVE, phones & tablets
        Desktop = orb shifted left + a 45% chat panel on the right.
        On narrow screens that split can't breathe, so we STACK:
        the orb sits small up top (positioned from JS) and the chat /
@@ -627,7 +627,7 @@
       #screen-active .timer-container { top: 70px; }
     }
 
-    /* Typewriter caret — blinks while Ikli's words stream in, in step with the
+    /* Typewriter caret, blinks while Ikli's words stream in, in step with the
        voice; removed the moment the line finishes. */
     .typing-cursor {
       display: inline-block;
@@ -719,24 +719,24 @@
     </div>
   </div>
 
-  <!-- PHONE NUMBER FORM (appears mid-call when booking a meeting) -->
-  <div class="ui-layer" id="phone-modal" style="display:none; z-index: 210; backdrop-filter: blur(8px); background: rgba(0,0,0,0.4);">
+  <!-- BOOKING FORM (appears mid-call; collects a phone number or an email) -->
+  <div class="ui-layer" id="collect-modal" style="display:none; z-index: 210; backdrop-filter: blur(8px); background: rgba(0,0,0,0.4);">
     <div class="glass-card" style="padding: 36px; max-width: 420px; width: 90%; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px;">
       <div style="background: rgba(255, 76, 57, 0.1); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 76, 57, 0.2);">
-        <span class="material-symbols-outlined" style="color: #ff4c39; font-size: 30px;">smartphone</span>
+        <span id="collect-icon" class="material-symbols-outlined" style="color: #ff4c39; font-size: 30px;">smartphone</span>
       </div>
       <div>
-        <h3 style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">Your phone number</h3>
-        <p style="color: #71717A; font-size: 14px; line-height: 1.5;">Enter it with your country code — for example <span style="color:#ff4c39; white-space:nowrap;">+20 115 047 2975</span></p>
+        <h3 id="collect-title" style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">Your phone number</h3>
+        <p id="collect-hint" style="color: #71717A; font-size: 14px; line-height: 1.5;">Enter it with your country code, for example <span style="color:#ff4c39; white-space:nowrap;">+20 115 047 2975</span></p>
       </div>
-      <div id="phone-input-pill" style="display:flex; align-items:center; padding:6px 6px 6px 18px; border-radius:18px; width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14);">
-        <input id="phone-field" type="tel" inputmode="tel" autocomplete="tel" placeholder="+20 115 047 2975" aria-label="Phone number with country code"
+      <div id="collect-input-pill" style="display:flex; align-items:center; padding:6px 6px 6px 18px; border-radius:18px; width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14);">
+        <input id="collect-field" type="tel" inputmode="tel" autocomplete="tel" placeholder="+20 115 047 2975" aria-label="Booking contact"
           style="flex:1; background:transparent; border:none; color:inherit; font-family:inherit; outline:none; font-size:15px;"
-          onkeydown="if(event.key==='Enter'){submitPhoneForm();}">
+          onkeydown="if(event.key==='Enter'){submitCollectForm();}">
       </div>
       <div style="display:flex; gap:12px; width:100%;">
-        <button onclick="closePhoneForm()" aria-label="Cancel phone entry" style="flex:1; padding:14px; border-radius:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#A1A1AA; font-weight:600; font-family:'Excon', sans-serif;">Cancel</button>
-        <button onclick="submitPhoneForm()" aria-label="Submit phone number" style="flex:1.5; padding:14px; border-radius:14px; background:#ff4c39; border:none; color:white; font-weight:700; font-family:'Excon', sans-serif; box-shadow:0 8px 24px rgba(255,76,57,0.25);">Send</button>
+        <button onclick="closeCollectForm()" aria-label="Cancel" style="flex:1; padding:14px; border-radius:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#A1A1AA; font-weight:600; font-family:'Excon', sans-serif;">Cancel</button>
+        <button onclick="submitCollectForm()" aria-label="Submit" style="flex:1.5; padding:14px; border-radius:14px; background:#ff4c39; border:none; color:white; font-weight:700; font-family:'Excon', sans-serif; box-shadow:0 8px 24px rgba(255,76,57,0.25);">Send</button>
       </div>
     </div>
   </div>
@@ -809,7 +809,7 @@
           padding:20px 24px;
           animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both">
           <p style="font-size:15px;line-height:1.6">
-            We specialize in advanced AI deployment — from real-time voice agents to complex automation workflows. Should we discuss a specific use case?
+            We specialize in advanced AI deployment, from real-time voice agents to complex automation workflows. Should we discuss a specific use case?
           </p>
         </div>
       </div>
@@ -1162,6 +1162,9 @@
       document.getElementById('screen-active').style.display = 'none';
       document.getElementById('screen-ended').style.display = 'flex';
 
+      // Default the export to email (pre-filled if we captured one during the call).
+      try { showExportInput('email'); } catch (e) {}
+
       // ---- Real session report ----
       const turns = (window.__getTranscript ? window.__getTranscript() : []) || [];
       const transcriptEl = document.getElementById('final-transcription');
@@ -1214,7 +1217,10 @@
       } else {
         field.placeholder = "Enter your email address";
         field.type = "email";
-        field.value = '';
+        // Pre-fill the email the caller gave during the call, if we saved one.
+        let saved = '';
+        try { saved = localStorage.getItem('ikli_user_email') || ''; } catch {}
+        field.value = saved;
       }
       field.focus();
     }
@@ -1224,44 +1230,93 @@
       document.getElementById('export-options').style.display = 'flex';
     }
 
-    // ---- Phone number form (booking flow) ---------------------------------
-    let __phoneIdleTimer = null;
-    let __phoneTouched = false;
+    // ---- Booking form (phone or email) ------------------------------------
+    let __collectKind = 'phone';
+    let __collectTouched = false;
+    let __collectTimers = [];
 
-    // Agent opened the form (via its participant attribute -> voice-agent.ts).
-    window.__openPhoneForm = function () {
-      const m = document.getElementById('phone-modal');
-      const f = document.getElementById('phone-field');
+    function __collectModalOpen() {
+      const m = document.getElementById('collect-modal');
+      return m && m.style.display === 'flex';
+    }
+
+    function __clearCollectTimers() {
+      __collectTimers.forEach(t => clearTimeout(t));
+      __collectTimers = [];
+    }
+
+    // Silence watch: nudge at 5/10/15s, end the call at 20s of continuous silence.
+    // Any typing (touched) or the caller speaking (resetCollectIdle) restarts it.
+    function __startCollectSilenceWatch() {
+      __clearCollectTimers();
+      const stillSilent = () => __collectModalOpen() && !__collectTouched
+        && !((document.getElementById('collect-field') || {}).value || '').trim();
+      const nudge = () => { if (stillSilent()) { try { window.__collectIdleSignal && window.__collectIdleSignal(); } catch (e) {} } };
+      __collectTimers.push(setTimeout(nudge, 5000));
+      __collectTimers.push(setTimeout(nudge, 10000));
+      __collectTimers.push(setTimeout(nudge, 15000));
+      __collectTimers.push(setTimeout(() => {
+        if (stillSilent()) { window.__closeCollectFormUI(); if (typeof confirmEndSession === 'function') confirmEndSession(); }
+      }, 20000));
+    }
+
+    // Someone is speaking -> pause the silence countdown (no nudge mid-sentence,
+    // and the caller reading the number aloud is never cut off).
+    window.__pauseCollectIdle = function () { __clearCollectTimers(); };
+    // Everyone went quiet -> (re)start the silence countdown from zero.
+    window.__resumeCollectIdle = function () {
+      if (__collectModalOpen() && !__collectTouched) __startCollectSilenceWatch();
+    };
+
+    // Agent opened the form (kind = 'phone' | 'email'), configured via voice-agent.ts.
+    window.__openCollectForm = function (kind) {
+      __collectKind = (kind === 'email') ? 'email' : 'phone';
+      const m = document.getElementById('collect-modal');
+      const f = document.getElementById('collect-field');
+      const icon = document.getElementById('collect-icon');
+      const title = document.getElementById('collect-title');
+      const hint = document.getElementById('collect-hint');
       if (!m || !f) return;
-      __phoneTouched = false;
-      try { const saved = localStorage.getItem('ikli_user_phone') || ''; if (saved && !f.value) f.value = saved; } catch (e) {}
+      __collectTouched = false;
+      if (__collectKind === 'email') {
+        if (icon) icon.textContent = 'mail';
+        if (title) title.textContent = 'Your email';
+        if (hint) hint.textContent = 'Type the email where we should send your booking link.';
+        f.type = 'email'; f.inputMode = 'email'; f.setAttribute('autocomplete', 'email');
+        f.placeholder = 'you@example.com';
+        f.value = '';
+        try { const saved = localStorage.getItem('ikli_user_email') || ''; if (saved) f.value = saved; } catch (e) {}
+      } else {
+        if (icon) icon.textContent = 'smartphone';
+        if (title) title.textContent = 'Your phone number';
+        if (hint) hint.innerHTML = 'Enter it with your country code, for example <span style="color:#ff4c39; white-space:nowrap;">+20 115 047 2975</span>';
+        f.type = 'tel'; f.inputMode = 'tel'; f.setAttribute('autocomplete', 'tel');
+        f.placeholder = '+20 115 047 2975';
+        f.value = '';
+        try { const saved = localStorage.getItem('ikli_user_phone') || ''; if (saved) f.value = saved; } catch (e) {}
+      }
       m.style.display = 'flex';
       setTimeout(() => f.focus(), 60);
-      f.oninput = () => { __phoneTouched = true; };
-      // After ~5s with nothing typed, let the agent gently check in.
-      clearTimeout(__phoneIdleTimer);
-      __phoneIdleTimer = setTimeout(() => {
-        const val = (f.value || '').trim();
-        if (!__phoneTouched && !val) { try { window.__phoneFormIdle && window.__phoneFormIdle(); } catch (e) {} }
-      }, 5000);
+      f.oninput = () => { __collectTouched = true; __clearCollectTimers(); };
+      __startCollectSilenceWatch();
     };
 
-    // Agent closed the form (or we're moving on).
-    window.__closePhoneFormUI = function () {
-      const m = document.getElementById('phone-modal');
+    // Agent closed the form (or we're moving on / ending).
+    window.__closeCollectFormUI = function () {
+      const m = document.getElementById('collect-modal');
       if (m) m.style.display = 'none';
-      clearTimeout(__phoneIdleTimer);
+      __clearCollectTimers();
     };
 
-    function closePhoneForm() { window.__closePhoneFormUI(); }
+    function closeCollectForm() { window.__closeCollectFormUI(); }
 
-    function submitPhoneForm() {
-      const f = document.getElementById('phone-field');
+    function submitCollectForm() {
+      const f = document.getElementById('collect-field');
       const val = (f && f.value || '').trim();
       if (!val) { if (f) f.focus(); return; }
-      clearTimeout(__phoneIdleTimer);
-      try { window.__submitPhone && window.__submitPhone(val); } catch (e) {}
-      window.__closePhoneFormUI();
+      __clearCollectTimers();
+      try { window.__submitCollect && window.__submitCollect(__collectKind, val); } catch (e) {}
+      window.__closeCollectFormUI();
     }
 
     function buildReportMessage() {

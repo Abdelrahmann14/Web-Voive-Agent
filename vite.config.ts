@@ -8,7 +8,7 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     // basicSsl serves the dev site over HTTPS so the microphone (getUserMedia)
-    // works from any address — LAN IPs and other devices, not just localhost.
+    // works from any address, LAN IPs and other devices, not just localhost.
     plugins: [react(), tailwindcss(), basicSsl()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),

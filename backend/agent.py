@@ -1,7 +1,7 @@
 """
-LiveKit voice agent worker — latency-optimized for English.
+LiveKit voice agent worker, latency-optimized for English.
 
-Pipeline (LLM unchanged — Google Gemini):
+Pipeline (LLM unchanged, Google Gemini):
     Deepgram nova-3 (STT, English, fast endpointing)
       -> Google Gemini (LLM, preemptive generation)
       -> ElevenLabs Flash v2.5 (TTS, auto_mode)
@@ -31,7 +31,10 @@ import asyncio
 import json
 import os
 import re
+import smtplib
+import ssl
 import uuid
+from email.message import EmailMessage
 
 import numpy as np
 import requests
@@ -45,7 +48,7 @@ from knowledge import full_instructions
 
 load_dotenv()
 
-# Fixed first-time greeting — pre-rendered once at startup so it plays instantly
+# Fixed first-time greeting, pre-rendered once at startup so it plays instantly
 # (no live TTS synthesis on the call's critical path).
 FIXED_GREETING = "Hey! I'm Ikli, from Iklipse. Who am I talking to?"
 GREETING_SR = 24000  # ElevenLabs pcm_24000
@@ -113,7 +116,7 @@ def _digits_only(phone: str) -> str:
 
 def _calendly_booking_url() -> str:
     """Create a fresh single-use Calendly scheduling link; fall back to the static
-    booking URL if the API call fails or isn't configured. Blocking — call via
+    booking URL if the API call fails or isn't configured. Blocking, call via
     asyncio.to_thread from async code."""
     token = os.environ.get("CALENDLY_TOKEN")
     event_type = os.environ.get("CALENDLY_EVENT_TYPE")
@@ -139,7 +142,7 @@ def _calendly_booking_url() -> str:
 
 
 def _send_whatsapp(phone: str, text: str) -> bool:
-    """Send a WhatsApp message via GREEN-API. Blocking — call via asyncio.to_thread."""
+    """Send a WhatsApp message via GREEN-API. Blocking, call via asyncio.to_thread."""
     host = os.environ.get("GREENAPI_HOST", "https://api.green-api.com").rstrip("/")
     idi = os.environ.get("GREENAPI_ID")
     token = os.environ.get("GREENAPI_TOKEN")
@@ -157,6 +160,40 @@ def _send_whatsapp(phone: str, text: str) -> bool:
         return False
 
 
+def _send_email(to: str, subject: str, body: str) -> bool:
+    """Send a plain-text email via SMTP (app password). Blocking; call via to_thread."""
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    try:
+        port = int(os.environ.get("SMTP_PORT", "465"))
+    except ValueError:
+        port = 465
+    user = (os.environ.get("SMTP_USER") or "").strip()
+    pwd = (os.environ.get("SMTP_PASS") or "").replace(" ", "")
+    sender = os.environ.get("SMTP_FROM") or user
+    to = (to or "").strip()
+    if not (user and pwd and to):
+        return False
+    try:
+        msg = EmailMessage()
+        msg["From"] = sender
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg.set_content(body)
+        ctx = ssl.create_default_context()
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, context=ctx, timeout=25) as s:
+                s.login(user, pwd)
+                s.send_message(msg)
+        else:  # 587 / STARTTLS
+            with smtplib.SMTP(host, port, timeout=25) as s:
+                s.starttls(context=ctx)
+                s.login(user, pwd)
+                s.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
 def prewarm(proc: agents.JobProcess):
     # Load Silero VAD once per worker process, off the per-call critical path.
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.2)
@@ -169,12 +206,12 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
     dg_model = os.environ.get("DEEPGRAM_MODEL", "nova-3")
     stt_kwargs = dict(
         model=dg_model,
-        language="en",            # English only — no language detection latency
+        language="en",            # English only, no language detection latency
         interim_results=True,
         smart_format=True,
         punctuate=True,
         no_delay=True,            # emit finals without extra hold
-        endpointing_ms=60,        # was 25 (too aggressive — clipped trailing words)
+        endpointing_ms=60,        # was 25 (too aggressive, clipped trailing words)
         filler_words=False,
         api_key=os.environ.get("DEEPGRAM_API_KEY"),
     )
@@ -250,19 +287,27 @@ async def entrypoint(ctx: agents.JobContext):
 
     @function_tool
     async def open_phone_form() -> str:
-        """Show the on-screen phone-number form to the caller. A small modal appears
-        in the middle of their screen while the call stays live, so they can type
-        their phone number (with country code). Call this when they want to book a
-        meeting and you're about to collect their number. After calling it, tell them
-        the form has appeared and what to enter, then wait for their number."""
-        await _set_attr(open_phone_form=uuid.uuid4().hex)  # new value each time -> reopens
+        """Show the on-screen phone-number form. A small modal appears in the middle
+        of the caller's screen while the call stays live, so they can type their phone
+        number with country code. Call this when they want the booking link by WhatsApp.
+        After calling it, tell them the form appeared and what to enter, then wait."""
+        await _set_attr(open_collect_form=f"phone:{uuid.uuid4().hex}")
+        return "form_shown"
+
+    @function_tool
+    async def open_email_form() -> str:
+        """Switch the on-screen form to collect an EMAIL instead of a phone number
+        (this closes the phone form and opens an email form). Call this when the caller
+        would rather get the booking link by email. Then tell them to type their email
+        in the form that appeared, and wait."""
+        await _set_attr(open_collect_form=f"email:{uuid.uuid4().hex}")
         return "form_shown"
 
     @function_tool
     async def send_booking_link(phone_number: str) -> str:
-        """Once the caller has given AND confirmed their phone number, send them the
-        Calendly booking link over WhatsApp. Pass the full number including country
-        code. Returns 'sent' on success. Only call after they confirm the number."""
+        """After the caller gives AND confirms their phone number, send the Calendly
+        booking link over WhatsApp. Pass the full number with country code. Returns
+        'sent' on success. Only call after they confirm the number."""
         phone = (phone_number or state.get("phone") or "").strip()
         digits = _digits_only(phone)
         if len(digits) < 8:
@@ -275,7 +320,27 @@ async def entrypoint(ctx: agents.JobContext):
         ok = await asyncio.to_thread(
             _send_whatsapp,
             digits,
-            f"Hey! Here's your Iklipse booking link — pick a time that suits you: {url}",
+            f"Hey! Here's your Iklipse booking link, pick a time that suits you: {url}",
+        )
+        return "sent" if ok else "send_failed"
+
+    @function_tool
+    async def send_booking_link_email(email: str) -> str:
+        """After the caller gives AND confirms their email, email them the Calendly
+        booking link. Returns 'sent' on success. Only call after they confirm."""
+        addr = (email or state.get("email") or "").strip()
+        if "@" not in addr or "." not in addr.split("@")[-1]:
+            return "invalid_email"
+        state["email"] = addr
+        await _set_attr(save_user_email=addr)  # frontend pre-fills the email export later
+        url = await asyncio.to_thread(_calendly_booking_url)
+        if not url:
+            return "no_link_configured"
+        ok = await asyncio.to_thread(
+            _send_email,
+            addr,
+            "Your Iklipse booking link",
+            f"Hi!\n\nHere's your Iklipse booking link, pick a time that suits you:\n{url}\n\nSee you soon.",
         )
         return "sent" if ok else "send_failed"
 
@@ -284,32 +349,51 @@ async def entrypoint(ctx: agents.JobContext):
         room=ctx.room,
         agent=Agent(
             instructions=instructions_for(known_name),
-            tools=[record_user_name, open_phone_form, send_booking_link],
+            tools=[
+                record_user_name,
+                open_phone_form,
+                open_email_form,
+                send_booking_link,
+                send_booking_link_email,
+            ],
         ),
         room_input_options=RoomInputOptions(),
     )
 
-    # Listen for the phone form's browser-side events (the caller submits a number,
-    # or the form sits empty). The frontend sets these as its own participant
-    # attributes; drive the next agent turn from them.
+    # Bridge the browser form back to the agent. The frontend sets its own participant
+    # attributes when the caller submits (collect_submit nonce + collect_value +
+    # collect_kind) or when the form sits empty (collect_idle). Read the current values
+    # off the participant so a re-submit of the same value still fires.
     agent_identity = ctx.room.local_participant.identity
     loop = asyncio.get_running_loop()
 
-    async def _on_phone_submitted(phone: str) -> None:
-        state["phone"] = phone
-        session.generate_reply(
-            instructions=(
-                f"The caller just submitted their phone number through the form: {phone}. "
-                "Read it back to them clearly and naturally, then ask them to confirm it's "
-                "right. Do not call any tool or send anything until they confirm."
+    async def _on_submitted(kind: str, value: str) -> None:
+        if kind == "email":
+            state["email"] = value
+            session.generate_reply(
+                instructions=(
+                    f"The caller just submitted their email through the form: {value}. "
+                    "Read it back clearly to confirm you've got it right, spelling out anything "
+                    "unusual, then ask them to confirm. Do not send anything until they confirm."
+                )
             )
-        )
+        else:
+            state["phone"] = value
+            session.generate_reply(
+                instructions=(
+                    f"The caller just submitted their phone number through the form: {value}. "
+                    "Read it back as individual digits, one at a time (say 'one, two, three', "
+                    "never as a big number), then ask them to confirm. Do not send anything "
+                    "until they confirm."
+                )
+            )
 
-    async def _on_phone_idle() -> None:
+    async def _on_idle() -> None:
         session.generate_reply(
             instructions=(
-                "The phone form has been sitting empty for a few seconds. Gently check in — "
-                "ask if they've had a chance to enter their number yet. Keep it brief and warm."
+                "The form has been sitting empty and the caller has gone quiet. Check in "
+                "briefly and warmly: ask if they're still there and whether they've had a "
+                "chance to enter it. Keep it short."
             )
         )
 
@@ -317,11 +401,14 @@ async def entrypoint(ctx: agents.JobContext):
         try:
             if getattr(participant, "identity", None) == agent_identity:
                 return  # ignore the agent's own attribute writes
-            phone = changed.get("phone_number")
-            if phone:
-                loop.create_task(_on_phone_submitted(phone))
-            if changed.get("phone_form_idle"):
-                loop.create_task(_on_phone_idle())
+            if "collect_submit" in changed:
+                attrs = getattr(participant, "attributes", {}) or {}
+                value = (attrs.get("collect_value") or "").strip()
+                kind = attrs.get("collect_kind") or "phone"
+                if value:
+                    loop.create_task(_on_submitted(kind, value))
+            if "collect_idle" in changed:
+                loop.create_task(_on_idle())
         except Exception:
             pass
 
@@ -333,7 +420,7 @@ async def entrypoint(ctx: agents.JobContext):
         # Personalized greeting must be synthesized live (name varies).
         await session.say(f"Hey {known_name}! What can I do for you?", allow_interruptions=True)
     elif greeting_pcm:
-        # Play the pre-rendered greeting audio — no synthesis latency.
+        # Play the pre-rendered greeting audio, no synthesis latency.
         await session.say(
             FIXED_GREETING, audio=_pcm_to_frames(greeting_pcm), allow_interruptions=True
         )

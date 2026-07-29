@@ -137,7 +137,7 @@ function upsertSegment(segId: string, text: string, isUser: boolean) {
     const el = document.createElement('div');
     el.className = 'bubble ' + (isUser ? 'user' : 'agent');
     // Agent bubbles "emerge from the orb" (fly in from the left where the orb sits);
-    // user bubbles rise from the right. Pure GPU transform — no latency cost.
+    // user bubbles rise from the right. Pure GPU transform, no latency cost.
     el.style.cssText = isUser
       ? 'align-self:flex-end;max-width:80%;background:rgba(99,102,241,0.05);border:1px solid rgba(99,102,241,0.1);border-radius:24px 24px 4px 24px;padding:20px 24px;transform-origin:right center;animation:fadeUp 0.5s cubic-bezier(0.2,0.8,0.2,1) forwards'
       : 'align-self:flex-start;max-width:85%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:24px 24px 24px 4px;padding:20px 24px;transform-origin:left center;animation:orbEmerge 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards';
@@ -197,12 +197,15 @@ function driveOrb(participants: Participant[]) {
   if (agentSpeaking) {
     setStatus('Speaking');
     window.setOrbSentiment?.(0.8);
+    window.__pauseCollectIdle?.();  // someone is talking, so it's not silence
   } else if (userSpeaking) {
     setStatus('Listening');
     window.setOrbSentiment?.(0.5);
+    window.__pauseCollectIdle?.();
   } else {
     setStatus('Connected');
     window.setOrbSentiment?.(0.5);
+    window.__resumeCollectIdle?.(); // everyone quiet -> start the silence countdown
   }
 }
 
@@ -252,7 +255,7 @@ async function connect() {
   room.on(RoomEvent.Disconnected, () => setStatus('Disconnected'));
 
   // The agent pushes signals here via its participant attributes: the caller's
-  // name / phone (persist for next call), and open/close the phone form mid-call.
+  // name / phone / email (persist for next call), and open/close the booking form.
   room.on(RoomEvent.ParticipantAttributesChanged, (changed: Record<string, string>) => {
     const n = changed?.user_name;
     if (n) {
@@ -262,13 +265,19 @@ async function connect() {
     if (phone) {
       try { localStorage.setItem('ikli_user_phone', phone); } catch {}
     }
-    if (changed?.open_phone_form) window.__openPhoneForm?.();
-    if (changed?.close_phone_form) window.__closePhoneFormUI?.();
+    const email = changed?.save_user_email;
+    if (email) {
+      try { localStorage.setItem('ikli_user_email', email); } catch {}
+    }
+    // open_collect_form value is "phone:<nonce>" or "email:<nonce>".
+    const open = changed?.open_collect_form;
+    if (open) window.__openCollectForm?.(open.split(':')[0] === 'email' ? 'email' : 'phone');
+    if (changed?.close_collect_form) window.__closeCollectFormUI?.();
   });
 
   await room.connect(url, token);
 
-  // 3. Transcript handler — key each bubble by segment id so interim results
+  // 3. Transcript handler, key each bubble by segment id so interim results
   //    update in place instead of spawning duplicates.
   try {
     room.registerTextStreamHandler('lk.transcription', async (reader: any, participantInfo: any) => {
@@ -281,7 +290,7 @@ async function connect() {
         text += chunk;
         upsertSegment(segId, text, isUser);
       }
-      finishSegment(segId); // stream done — let the caret clear once text catches up
+      finishSegment(segId); // stream done, let the caret clear once text catches up
     });
   } catch (e) {
     console.warn('transcription handler not registered', e);
@@ -312,11 +321,13 @@ declare global {
     __voiceDisconnect?: () => void;
     __getTranscript?: () => { role: string; text: string }[];
     setOrbSentiment?: (v: number) => void;
-    // Phone-form bridge (UI lives in index.html, room lives here).
-    __openPhoneForm?: () => void;
-    __closePhoneFormUI?: () => void;
-    __submitPhone?: (phone: string) => void;
-    __phoneFormIdle?: () => void;
+    // Booking-form bridge (form UI lives in index.html, the room lives here).
+    __openCollectForm?: (kind: 'phone' | 'email') => void;
+    __closeCollectFormUI?: () => void;
+    __pauseCollectIdle?: () => void;
+    __resumeCollectIdle?: () => void;
+    __submitCollect?: (kind: string, value: string) => void;
+    __collectIdleSignal?: () => void;
   }
 }
 
@@ -332,20 +343,23 @@ window.__voiceDisconnect = () => {
   disconnect().catch((err) => console.error(err));
 };
 
-// Caller submitted their phone number in the form -> tell the agent (via our
-// participant attribute) and remember it for the WhatsApp export pre-fill.
-window.__submitPhone = (phone: string) => {
-  const p = (phone || '').trim();
-  if (!p || !room) return;
-  try { localStorage.setItem('ikli_user_phone', p); } catch {}
-  room.localParticipant.setAttributes({ phone_number: p }).catch(() => {});
+// Caller submitted their phone/email in the form -> tell the agent (via our
+// participant attributes) and remember it for the export pre-fill. collect_submit
+// is a changing nonce so the agent's change handler fires even for a repeat value.
+window.__submitCollect = (kind: string, value: string) => {
+  const v = (value || '').trim();
+  if (!v || !room) return;
+  const k = kind === 'email' ? 'email' : 'phone';
+  try { localStorage.setItem(k === 'email' ? 'ikli_user_email' : 'ikli_user_phone', v); } catch {}
+  room.localParticipant
+    .setAttributes({ collect_kind: k, collect_value: v, collect_submit: Date.now().toString() })
+    .catch(() => {});
 };
 
-// Form has sat empty for a few seconds -> nudge the agent to check in.
-// Value changes each time so a re-open still fires the agent's change handler.
-window.__phoneFormIdle = () => {
+// Form has sat empty and the caller is silent -> nudge the agent to check in.
+window.__collectIdleSignal = () => {
   if (!room) return;
-  room.localParticipant.setAttributes({ phone_form_idle: Date.now().toString() }).catch(() => {});
+  room.localParticipant.setAttributes({ collect_idle: Date.now().toString() }).catch(() => {});
 };
 
 window.__getTranscript = () => getTranscript();
