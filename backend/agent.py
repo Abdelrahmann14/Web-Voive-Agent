@@ -270,7 +270,7 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
                 similarity_boost=0.75,
                 style=0.0,
                 use_speaker_boost=True,
-                speed=0.92,
+                speed=0.88,
             ),
             api_key=os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"),
         ),
