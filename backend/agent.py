@@ -33,7 +33,6 @@ import os
 import re
 import smtplib
 import ssl
-import uuid
 from email.message import EmailMessage
 
 import numpy as np
@@ -194,6 +193,39 @@ def _send_email(to: str, subject: str, body: str) -> bool:
         return False
 
 
+# Insert a space between adjacent digits so the TTS reads a number one digit at a
+# time (e.g. "+201150472975" is spoken as "plus two zero one ..."). Only affects
+# the spoken audio; the transcript keeps the compact number.
+_DIGIT_GAP = re.compile(r"(?<=\d)(?=\d)")
+_EM_DASH = chr(0x2014)  # em dash, built from its code point so it never appears literally
+
+
+class IkliAgent(Agent):
+    """Agent with output sanitizers so the model's habits never leak through:
+
+    - em dashes are never spoken or shown (replaced with a comma),
+    - long digit strings are spoken one digit at a time for a clear phone-number
+      read-back, while the on-screen transcript keeps them as a compact number.
+    """
+
+    async def tts_node(self, text, model_settings):
+        async def _clean():
+            async for chunk in text:
+                c = chunk.replace(_EM_DASH, ", ")
+                c = _DIGIT_GAP.sub(" ", c)
+                yield c
+
+        async for frame in Agent.default.tts_node(self, _clean(), model_settings):
+            yield frame
+
+    async def transcription_node(self, text, model_settings):
+        async for chunk in text:
+            if isinstance(chunk, str) and _EM_DASH in chunk:
+                yield chunk.replace(_EM_DASH, ", ")
+            else:
+                yield chunk
+
+
 def prewarm(proc: agents.JobProcess):
     # Load Silero VAD once per worker process, off the per-call critical path.
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.2)
@@ -264,15 +296,17 @@ async def entrypoint(ctx: agents.JobContext):
     except Exception:
         known_name = None
 
-    # Shared per-call state + a merge-safe attribute writer (set_attributes can
-    # replace the whole map, so we always re-send every key we've set).
-    state = {"phone": None}
-    agent_attrs: dict[str, str] = {}
+    # Shared per-call state + a reliable data-message channel to the browser.
+    # Data messages (not participant attributes) are used because the Cloud
+    # dispatched agent token may lack attribute-update permission, which made the
+    # form never open. publish_data always works agent -> client.
+    state = {"phone": None, "email": None}
 
-    async def _set_attr(**kw) -> None:
-        agent_attrs.update({k: str(v) for k, v in kw.items()})
+    async def _publish(obj: dict) -> None:
         try:
-            await ctx.room.local_participant.set_attributes(dict(agent_attrs))
+            await ctx.room.local_participant.publish_data(
+                json.dumps(obj), reliable=True, topic="ikli"
+            )
         except Exception:
             pass
 
@@ -282,7 +316,7 @@ async def entrypoint(ctx: agents.JobContext):
         and reuse it. Call this exactly once, as soon as you learn their name."""
         clean = (name or "").strip()
         if clean:
-            await _set_attr(user_name=clean)  # frontend persists it for next time
+            await _publish({"type": "name", "name": clean})  # frontend persists it
         return "saved"
 
     @function_tool
@@ -291,7 +325,7 @@ async def entrypoint(ctx: agents.JobContext):
         of the caller's screen while the call stays live, so they can type their phone
         number with country code. Call this when they want the booking link by WhatsApp.
         After calling it, tell them the form appeared and what to enter, then wait."""
-        await _set_attr(open_collect_form=f"phone:{uuid.uuid4().hex}")
+        await _publish({"type": "open_form", "kind": "phone"})
         return "form_shown"
 
     @function_tool
@@ -300,7 +334,7 @@ async def entrypoint(ctx: agents.JobContext):
         (this closes the phone form and opens an email form). Call this when the caller
         would rather get the booking link by email. Then tell them to type their email
         in the form that appeared, and wait."""
-        await _set_attr(open_collect_form=f"email:{uuid.uuid4().hex}")
+        await _publish({"type": "open_form", "kind": "email"})
         return "form_shown"
 
     @function_tool
@@ -313,7 +347,7 @@ async def entrypoint(ctx: agents.JobContext):
         if len(digits) < 8:
             return "invalid_number"
         state["phone"] = phone
-        await _set_attr(save_user_phone=digits)  # frontend pre-fills WhatsApp export later
+        await _publish({"type": "save", "phone": digits})  # frontend pre-fills export
         url = await asyncio.to_thread(_calendly_booking_url)
         if not url:
             return "no_link_configured"
@@ -332,7 +366,7 @@ async def entrypoint(ctx: agents.JobContext):
         if "@" not in addr or "." not in addr.split("@")[-1]:
             return "invalid_email"
         state["email"] = addr
-        await _set_attr(save_user_email=addr)  # frontend pre-fills the email export later
+        await _publish({"type": "save", "email": addr})  # frontend pre-fills export
         url = await asyncio.to_thread(_calendly_booking_url)
         if not url:
             return "no_link_configured"
@@ -347,7 +381,7 @@ async def entrypoint(ctx: agents.JobContext):
     session = build_session(ctx)
     await session.start(
         room=ctx.room,
-        agent=Agent(
+        agent=IkliAgent(
             instructions=instructions_for(known_name),
             tools=[
                 record_user_name,
@@ -360,11 +394,9 @@ async def entrypoint(ctx: agents.JobContext):
         room_input_options=RoomInputOptions(),
     )
 
-    # Bridge the browser form back to the agent. The frontend sets its own participant
-    # attributes when the caller submits (collect_submit nonce + collect_value +
-    # collect_kind) or when the form sits empty (collect_idle). Read the current values
-    # off the participant so a re-submit of the same value still fires.
-    agent_identity = ctx.room.local_participant.identity
+    # Bridge the browser form back to the agent over the data channel. The frontend
+    # publishes {"type":"submit","kind":..,"value":..} when the caller submits, and
+    # {"type":"idle"} when the form sits empty and they go quiet.
     loop = asyncio.get_running_loop()
 
     async def _on_submitted(kind: str, value: str) -> None:
@@ -382,9 +414,9 @@ async def entrypoint(ctx: agents.JobContext):
             session.generate_reply(
                 instructions=(
                     f"The caller just submitted their phone number through the form: {value}. "
-                    "Read it back as individual digits, one at a time (say 'one, two, three', "
-                    "never as a big number), then ask them to confirm. Do not send anything "
-                    "until they confirm."
+                    "In your reply, write the number itself in plain digits exactly as given "
+                    f"(for example {value}), then ask them to confirm it's right. Do not send "
+                    "anything until they confirm."
                 )
             )
 
@@ -397,22 +429,22 @@ async def entrypoint(ctx: agents.JobContext):
             )
         )
 
-    def _on_attrs_changed(changed: dict, participant) -> None:
+    def _on_data(packet: rtc.DataPacket) -> None:
         try:
-            if getattr(participant, "identity", None) == agent_identity:
-                return  # ignore the agent's own attribute writes
-            if "collect_submit" in changed:
-                attrs = getattr(participant, "attributes", {}) or {}
-                value = (attrs.get("collect_value") or "").strip()
-                kind = attrs.get("collect_kind") or "phone"
-                if value:
-                    loop.create_task(_on_submitted(kind, value))
-            if "collect_idle" in changed:
-                loop.create_task(_on_idle())
+            if packet.topic and packet.topic != "ikli":
+                return
+            msg = json.loads(bytes(packet.data).decode("utf-8"))
         except Exception:
-            pass
+            return
+        t = msg.get("type")
+        if t == "submit":
+            value = (msg.get("value") or "").strip()
+            if value:
+                loop.create_task(_on_submitted(msg.get("kind") or "phone", value))
+        elif t == "idle":
+            loop.create_task(_on_idle())
 
-    ctx.room.on("participant_attributes_changed", _on_attrs_changed)
+    ctx.room.on("data_received", _on_data)
 
     # Speak first, instantly.
     greeting_pcm = ctx.proc.userdata.get("greeting_pcm")

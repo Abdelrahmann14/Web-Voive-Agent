@@ -254,25 +254,28 @@ async function connect() {
   room.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => driveOrb(speakers));
   room.on(RoomEvent.Disconnected, () => setStatus('Disconnected'));
 
-  // The agent pushes signals here via its participant attributes: the caller's
-  // name / phone / email (persist for next call), and open/close the booking form.
-  room.on(RoomEvent.ParticipantAttributesChanged, (changed: Record<string, string>) => {
-    const n = changed?.user_name;
-    if (n) {
-      try { localStorage.setItem('ikli_user_name', n); } catch {}
+  // The agent signals the browser over the reliable data channel (topic 'ikli'):
+  // persist the caller's name / phone / email, and open/close the booking form.
+  room.on(RoomEvent.DataReceived, (payload: Uint8Array, _p?: unknown, _k?: unknown, topic?: string) => {
+    if (topic && topic !== 'ikli') return;
+    let msg: any;
+    try { msg = JSON.parse(new TextDecoder().decode(payload)); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
+    switch (msg.type) {
+      case 'name':
+        if (msg.name) { try { localStorage.setItem('ikli_user_name', msg.name); } catch {} }
+        break;
+      case 'save':
+        if (msg.phone) { try { localStorage.setItem('ikli_user_phone', msg.phone); } catch {} }
+        if (msg.email) { try { localStorage.setItem('ikli_user_email', msg.email); } catch {} }
+        break;
+      case 'open_form':
+        window.__openCollectForm?.(msg.kind === 'email' ? 'email' : 'phone');
+        break;
+      case 'close_form':
+        window.__closeCollectFormUI?.();
+        break;
     }
-    const phone = changed?.save_user_phone;
-    if (phone) {
-      try { localStorage.setItem('ikli_user_phone', phone); } catch {}
-    }
-    const email = changed?.save_user_email;
-    if (email) {
-      try { localStorage.setItem('ikli_user_email', email); } catch {}
-    }
-    // open_collect_form value is "phone:<nonce>" or "email:<nonce>".
-    const open = changed?.open_collect_form;
-    if (open) window.__openCollectForm?.(open.split(':')[0] === 'email' ? 'email' : 'phone');
-    if (changed?.close_collect_form) window.__closeCollectFormUI?.();
   });
 
   await room.connect(url, token);
@@ -343,23 +346,26 @@ window.__voiceDisconnect = () => {
   disconnect().catch((err) => console.error(err));
 };
 
-// Caller submitted their phone/email in the form -> tell the agent (via our
-// participant attributes) and remember it for the export pre-fill. collect_submit
-// is a changing nonce so the agent's change handler fires even for a repeat value.
+// Send a JSON message to the agent over the reliable data channel (topic 'ikli').
+function __publishToAgent(obj: any) {
+  if (!room) return;
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  room.localParticipant.publishData(bytes, { reliable: true, topic: 'ikli' }).catch(() => {});
+}
+
+// Caller submitted their phone/email in the form -> tell the agent and remember
+// it for the export pre-fill.
 window.__submitCollect = (kind: string, value: string) => {
   const v = (value || '').trim();
-  if (!v || !room) return;
+  if (!v) return;
   const k = kind === 'email' ? 'email' : 'phone';
   try { localStorage.setItem(k === 'email' ? 'ikli_user_email' : 'ikli_user_phone', v); } catch {}
-  room.localParticipant
-    .setAttributes({ collect_kind: k, collect_value: v, collect_submit: Date.now().toString() })
-    .catch(() => {});
+  __publishToAgent({ type: 'submit', kind: k, value: v });
 };
 
 // Form has sat empty and the caller is silent -> nudge the agent to check in.
 window.__collectIdleSignal = () => {
-  if (!room) return;
-  room.localParticipant.setAttributes({ collect_idle: Date.now().toString() }).catch(() => {});
+  __publishToAgent({ type: 'idle' });
 };
 
 window.__getTranscript = () => getTranscript();
