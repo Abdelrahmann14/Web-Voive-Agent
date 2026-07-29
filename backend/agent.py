@@ -320,62 +320,62 @@ async def entrypoint(ctx: agents.JobContext):
         return "saved"
 
     @function_tool
-    async def open_phone_form() -> str:
-        """Show the on-screen phone-number form. A small modal appears in the middle
-        of the caller's screen while the call stays live, so they can type their phone
-        number with country code. Call this when they want the booking link by WhatsApp.
-        After calling it, tell them the form appeared and what to enter, then wait."""
-        await _publish({"type": "open_form", "kind": "phone"})
+    async def record_contact(phone: str = "", email: str = "") -> str:
+        """Remember the caller's phone number and/or email when they mention it during
+        the chat, so the export buttons can pre-fill it afterwards. Call this whenever
+        they share contact details, even if they are not booking yet."""
+        p = _digits_only(phone)
+        e = (email or "").strip()
+        if p:
+            state["phone"] = p
+            await _publish({"type": "save", "phone": p})
+        if "@" in e:
+            state["email"] = e
+            await _publish({"type": "save", "email": e})
+        return "saved"
+
+    @function_tool
+    async def open_contact_form() -> str:
+        """Show the on-screen contact form so the caller can type EITHER their phone
+        number (with country code) OR their email, whichever they prefer, while the call
+        stays live. Call this when they want to book. After calling it, tell them the form
+        appeared and that they can enter a phone number or an email, then wait."""
+        await _publish({"type": "open_form"})
         return "form_shown"
 
     @function_tool
-    async def open_email_form() -> str:
-        """Switch the on-screen form to collect an EMAIL instead of a phone number
-        (this closes the phone form and opens an email form). Call this when the caller
-        would rather get the booking link by email. Then tell them to type their email
-        in the form that appeared, and wait."""
-        await _publish({"type": "open_form", "kind": "email"})
-        return "form_shown"
-
-    @function_tool
-    async def send_booking_link(phone_number: str) -> str:
-        """After the caller gives AND confirms their phone number, send the Calendly
-        booking link over WhatsApp. Pass the full number with country code. Returns
-        'sent' on success. Only call after they confirm the number."""
-        phone = (phone_number or state.get("phone") or "").strip()
-        digits = _digits_only(phone)
-        if len(digits) < 8:
-            return "invalid_number"
-        state["phone"] = phone
-        await _publish({"type": "save", "phone": digits})  # frontend pre-fills export
+    async def send_booking_link(contact: str) -> str:
+        """After the caller gives AND confirms their contact, send the Calendly booking
+        link. Pass whatever they gave: a phone number (delivered via WhatsApp) or an email
+        (delivered via email). The right channel is auto-detected. Returns 'sent' on
+        success. Only call after they confirm."""
+        raw = (contact or state.get("phone") or state.get("email") or "").strip()
         url = await asyncio.to_thread(_calendly_booking_url)
         if not url:
             return "no_link_configured"
-        ok = await asyncio.to_thread(
-            _send_whatsapp,
-            digits,
-            f"Hey! Here's your Iklipse booking link, pick a time that suits you: {url}",
-        )
-        return "sent" if ok else "send_failed"
-
-    @function_tool
-    async def send_booking_link_email(email: str) -> str:
-        """After the caller gives AND confirms their email, email them the Calendly
-        booking link. Returns 'sent' on success. Only call after they confirm."""
-        addr = (email or state.get("email") or "").strip()
-        if "@" not in addr or "." not in addr.split("@")[-1]:
-            return "invalid_email"
-        state["email"] = addr
-        await _publish({"type": "save", "email": addr})  # frontend pre-fills export
-        url = await asyncio.to_thread(_calendly_booking_url)
-        if not url:
-            return "no_link_configured"
-        ok = await asyncio.to_thread(
-            _send_email,
-            addr,
-            "Your Iklipse booking link",
-            f"Hi!\n\nHere's your Iklipse booking link, pick a time that suits you:\n{url}\n\nSee you soon.",
-        )
+        if "@" in raw:
+            addr = raw
+            if "." not in addr.split("@")[-1]:
+                return "invalid_email"
+            state["email"] = addr
+            await _publish({"type": "save", "email": addr})
+            ok = await asyncio.to_thread(
+                _send_email,
+                addr,
+                "Your Iklipse booking link",
+                f"Hi!\n\nHere's your Iklipse booking link, pick a time that suits you:\n{url}\n\nSee you soon.",
+            )
+        else:
+            digits = _digits_only(raw)
+            if len(digits) < 8:
+                return "invalid_number"
+            state["phone"] = digits
+            await _publish({"type": "save", "phone": digits})
+            ok = await asyncio.to_thread(
+                _send_whatsapp,
+                digits,
+                f"Hey! Here's your Iklipse booking link, pick a time that suits you: {url}",
+            )
         return "sent" if ok else "send_failed"
 
     session = build_session(ctx)
@@ -385,38 +385,36 @@ async def entrypoint(ctx: agents.JobContext):
             instructions=instructions_for(known_name),
             tools=[
                 record_user_name,
-                open_phone_form,
-                open_email_form,
+                record_contact,
+                open_contact_form,
                 send_booking_link,
-                send_booking_link_email,
             ],
         ),
         room_input_options=RoomInputOptions(),
     )
 
     # Bridge the browser form back to the agent over the data channel. The frontend
-    # publishes {"type":"submit","kind":..,"value":..} when the caller submits, and
-    # {"type":"idle"} when the form sits empty and they go quiet.
+    # publishes {"type":"submit","value":..} when the caller submits (phone or email,
+    # auto-detected), and {"type":"idle"} when the form sits empty and they go quiet.
     loop = asyncio.get_running_loop()
 
-    async def _on_submitted(kind: str, value: str) -> None:
-        if kind == "email":
+    async def _on_submitted(value: str) -> None:
+        if "@" in value:  # they entered an email
             state["email"] = value
             session.generate_reply(
                 instructions=(
                     f"The caller just submitted their email through the form: {value}. "
-                    "Read it back clearly to confirm you've got it right, spelling out anything "
-                    "unusual, then ask them to confirm. Do not send anything until they confirm."
+                    "Read it back clearly to confirm you've got it right, then ask them to "
+                    "confirm. Do not send anything until they confirm."
                 )
             )
-        else:
+        else:  # they entered a phone number
             state["phone"] = value
             session.generate_reply(
                 instructions=(
                     f"The caller just submitted their phone number through the form: {value}. "
-                    "In your reply, write the number itself in plain digits exactly as given "
-                    f"(for example {value}), then ask them to confirm it's right. Do not send "
-                    "anything until they confirm."
+                    "In your reply, write the number in plain digits exactly as given, then ask "
+                    "them to confirm it's right. Do not send anything until they confirm."
                 )
             )
 
@@ -440,7 +438,7 @@ async def entrypoint(ctx: agents.JobContext):
         if t == "submit":
             value = (msg.get("value") or "").strip()
             if value:
-                loop.create_task(_on_submitted(msg.get("kind") or "phone", value))
+                loop.create_task(_on_submitted(value))
         elif t == "idle":
             loop.create_task(_on_idle())
 

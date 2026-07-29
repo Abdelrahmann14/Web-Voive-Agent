@@ -270,7 +270,7 @@ async function connect() {
         if (msg.email) { try { localStorage.setItem('ikli_user_email', msg.email); } catch {} }
         break;
       case 'open_form':
-        window.__openCollectForm?.(msg.kind === 'email' ? 'email' : 'phone');
+        window.__openCollectForm?.();
         break;
       case 'close_form':
         window.__closeCollectFormUI?.();
@@ -325,11 +325,11 @@ declare global {
     __getTranscript?: () => { role: string; text: string }[];
     setOrbSentiment?: (v: number) => void;
     // Booking-form bridge (form UI lives in index.html, the room lives here).
-    __openCollectForm?: (kind: 'phone' | 'email') => void;
+    __openCollectForm?: () => void;
     __closeCollectFormUI?: () => void;
     __pauseCollectIdle?: () => void;
     __resumeCollectIdle?: () => void;
-    __submitCollect?: (kind: string, value: string) => void;
+    __submitCollect?: (value: string) => void;
     __collectIdleSignal?: () => void;
   }
 }
@@ -353,14 +353,14 @@ function __publishToAgent(obj: any) {
   room.localParticipant.publishData(bytes, { reliable: true, topic: 'ikli' }).catch(() => {});
 }
 
-// Caller submitted their phone/email in the form -> tell the agent and remember
-// it for the export pre-fill.
-window.__submitCollect = (kind: string, value: string) => {
+// Caller submitted the form (phone OR email) -> tell the agent and remember it
+// for the export pre-fill. Type is auto-detected by looking for an '@'.
+window.__submitCollect = (value: string) => {
   const v = (value || '').trim();
   if (!v) return;
-  const k = kind === 'email' ? 'email' : 'phone';
-  try { localStorage.setItem(k === 'email' ? 'ikli_user_email' : 'ikli_user_phone', v); } catch {}
-  __publishToAgent({ type: 'submit', kind: k, value: v });
+  const isEmail = v.includes('@');
+  try { localStorage.setItem(isEmail ? 'ikli_user_email' : 'ikli_user_phone', v); } catch {}
+  __publishToAgent({ type: 'submit', value: v });
 };
 
 // Form has sat empty and the caller is silent -> nudge the agent to check in.
