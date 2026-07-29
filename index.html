@@ -469,12 +469,15 @@
     }
 
     /* Inputs */
-    body.light-mode #export-input-pill {
+    body.light-mode #export-input-pill,
+    body.light-mode #phone-input-pill {
       background: rgba(24,24,27,0.04) !important;
       border-color: var(--border) !important;
     }
-    body.light-mode #export-field { color: var(--text) !important; }
-    body.light-mode #export-field::placeholder { color: var(--text-muted) !important; }
+    body.light-mode #export-field,
+    body.light-mode #phone-field { color: var(--text) !important; }
+    body.light-mode #export-field::placeholder,
+    body.light-mode #phone-field::placeholder { color: var(--text-muted) !important; }
 
     /* Kill Chrome's autofill background; base = dark, light overrides text colour */
     #export-field:-webkit-autofill,
@@ -712,6 +715,28 @@
       <div style="display: flex; gap: 12px; width: 100%;">
         <button onclick="cancelEndCall()" aria-label="Cancel and return to session" style="flex: 1; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #A1A1AA; font-weight: 600; font-family: 'Excon', sans-serif;">Cancel</button>
         <button onclick="confirmEndSession()" aria-label="Confirm end session" style="flex: 1.5; padding: 16px; border-radius: 16px; background: #ff4c39; border: none; color: white; font-weight: 700; font-family: 'Excon', sans-serif; box-shadow: 0 8px 24px rgba(255,76,57,0.25);">End Session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHONE NUMBER FORM (appears mid-call when booking a meeting) -->
+  <div class="ui-layer" id="phone-modal" style="display:none; z-index: 210; backdrop-filter: blur(8px); background: rgba(0,0,0,0.4);">
+    <div class="glass-card" style="padding: 36px; max-width: 420px; width: 90%; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px;">
+      <div style="background: rgba(255, 76, 57, 0.1); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 76, 57, 0.2);">
+        <span class="material-symbols-outlined" style="color: #ff4c39; font-size: 30px;">smartphone</span>
+      </div>
+      <div>
+        <h3 style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">Your phone number</h3>
+        <p style="color: #71717A; font-size: 14px; line-height: 1.5;">Enter it with your country code — for example <span style="color:#ff4c39; white-space:nowrap;">+20 115 047 2975</span></p>
+      </div>
+      <div id="phone-input-pill" style="display:flex; align-items:center; padding:6px 6px 6px 18px; border-radius:18px; width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14);">
+        <input id="phone-field" type="tel" inputmode="tel" autocomplete="tel" placeholder="+20 115 047 2975" aria-label="Phone number with country code"
+          style="flex:1; background:transparent; border:none; color:inherit; font-family:inherit; outline:none; font-size:15px;"
+          onkeydown="if(event.key==='Enter'){submitPhoneForm();}">
+      </div>
+      <div style="display:flex; gap:12px; width:100%;">
+        <button onclick="closePhoneForm()" aria-label="Cancel phone entry" style="flex:1; padding:14px; border-radius:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#A1A1AA; font-weight:600; font-family:'Excon', sans-serif;">Cancel</button>
+        <button onclick="submitPhoneForm()" aria-label="Submit phone number" style="flex:1.5; padding:14px; border-radius:14px; background:#ff4c39; border:none; color:white; font-weight:700; font-family:'Excon', sans-serif; box-shadow:0 8px 24px rgba(255,76,57,0.25);">Send</button>
       </div>
     </div>
   </div>
@@ -1182,17 +1207,61 @@
       if (method === 'whatsapp') {
         field.placeholder = "+1 234 567 8900 (Country Code + Number)";
         field.type = "tel";
+        // Pre-fill the number the caller gave during the call, if we saved one.
+        let saved = '';
+        try { saved = localStorage.getItem('ikli_user_phone') || ''; } catch {}
+        field.value = saved;
       } else {
         field.placeholder = "Enter your email address";
         field.type = "email";
+        field.value = '';
       }
-      field.value = '';
       field.focus();
     }
 
     function resetExportOptions() {
       document.getElementById('export-input-area').style.display = 'none';
       document.getElementById('export-options').style.display = 'flex';
+    }
+
+    // ---- Phone number form (booking flow) ---------------------------------
+    let __phoneIdleTimer = null;
+    let __phoneTouched = false;
+
+    // Agent opened the form (via its participant attribute -> voice-agent.ts).
+    window.__openPhoneForm = function () {
+      const m = document.getElementById('phone-modal');
+      const f = document.getElementById('phone-field');
+      if (!m || !f) return;
+      __phoneTouched = false;
+      try { const saved = localStorage.getItem('ikli_user_phone') || ''; if (saved && !f.value) f.value = saved; } catch (e) {}
+      m.style.display = 'flex';
+      setTimeout(() => f.focus(), 60);
+      f.oninput = () => { __phoneTouched = true; };
+      // After ~5s with nothing typed, let the agent gently check in.
+      clearTimeout(__phoneIdleTimer);
+      __phoneIdleTimer = setTimeout(() => {
+        const val = (f.value || '').trim();
+        if (!__phoneTouched && !val) { try { window.__phoneFormIdle && window.__phoneFormIdle(); } catch (e) {} }
+      }, 5000);
+    };
+
+    // Agent closed the form (or we're moving on).
+    window.__closePhoneFormUI = function () {
+      const m = document.getElementById('phone-modal');
+      if (m) m.style.display = 'none';
+      clearTimeout(__phoneIdleTimer);
+    };
+
+    function closePhoneForm() { window.__closePhoneFormUI(); }
+
+    function submitPhoneForm() {
+      const f = document.getElementById('phone-field');
+      const val = (f && f.value || '').trim();
+      if (!val) { if (f) f.focus(); return; }
+      clearTimeout(__phoneIdleTimer);
+      try { window.__submitPhone && window.__submitPhone(val); } catch (e) {}
+      window.__closePhoneFormUI();
     }
 
     function buildReportMessage() {

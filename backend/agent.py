@@ -27,8 +27,11 @@ Run:  python agent.py dev     (development)
       python agent.py start   (production, lower overhead)
 """
 
+import asyncio
 import json
 import os
+import re
+import uuid
 
 import numpy as np
 import requests
@@ -36,6 +39,7 @@ from dotenv import load_dotenv
 from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, RoomInputOptions, function_tool
 from livekit.plugins import deepgram, elevenlabs, google, silero
+from livekit.plugins.elevenlabs import tts as el_tts
 
 from knowledge import full_instructions
 
@@ -101,6 +105,58 @@ async def _pcm_to_frames(pcm: bytes):
         )
 
 
+# ---- Booking: Calendly link + WhatsApp send --------------------------------
+
+def _digits_only(phone: str) -> str:
+    return re.sub(r"\D", "", phone or "")
+
+
+def _calendly_booking_url() -> str:
+    """Create a fresh single-use Calendly scheduling link; fall back to the static
+    booking URL if the API call fails or isn't configured. Blocking — call via
+    asyncio.to_thread from async code."""
+    token = os.environ.get("CALENDLY_TOKEN")
+    event_type = os.environ.get("CALENDLY_EVENT_TYPE")
+    static = os.environ.get("CALENDLY_BOOKING_URL", "")
+    if token and event_type:
+        try:
+            r = requests.post(
+                "https://api.calendly.com/scheduling_links",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={"max_event_count": 1, "owner": event_type, "owner_type": "EventType"},
+                timeout=10,
+            )
+            if r.status_code in (200, 201):
+                url = (r.json() or {}).get("resource", {}).get("booking_url")
+                if url:
+                    return url
+        except Exception:
+            pass
+    return static
+
+
+def _send_whatsapp(phone: str, text: str) -> bool:
+    """Send a WhatsApp message via GREEN-API. Blocking — call via asyncio.to_thread."""
+    host = os.environ.get("GREENAPI_HOST", "https://api.green-api.com").rstrip("/")
+    idi = os.environ.get("GREENAPI_ID")
+    token = os.environ.get("GREENAPI_TOKEN")
+    digits = _digits_only(phone)
+    if not (idi and token and digits):
+        return False
+    try:
+        r = requests.post(
+            f"{host}/waInstance{idi}/sendMessage/{token}",
+            json={"chatId": f"{digits}@c.us", "message": text},
+            timeout=15,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def prewarm(proc: agents.JobProcess):
     # Load Silero VAD once per worker process, off the per-call critical path.
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.2)
@@ -138,6 +194,15 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
             auto_mode=True,                    # start synthesis on boundaries -> lower latency
             enable_ssml_parsing=False,
             apply_text_normalization="off",    # skip normalization work
+            # Speak slightly slower so the spoken words and the on-screen caption
+            # stay in sync (speed 1.0 was a touch ahead of the typewriter).
+            voice_settings=el_tts.VoiceSettings(
+                stability=0.5,
+                similarity_boost=0.75,
+                style=0.0,
+                use_speaker_boost=True,
+                speed=0.92,
+            ),
             api_key=os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"),
         ),
         vad=vad,
@@ -162,25 +227,105 @@ async def entrypoint(ctx: agents.JobContext):
     except Exception:
         known_name = None
 
+    # Shared per-call state + a merge-safe attribute writer (set_attributes can
+    # replace the whole map, so we always re-send every key we've set).
+    state = {"phone": None}
+    agent_attrs: dict[str, str] = {}
+
+    async def _set_attr(**kw) -> None:
+        agent_attrs.update({k: str(v) for k, v in kw.items()})
+        try:
+            await ctx.room.local_participant.set_attributes(dict(agent_attrs))
+        except Exception:
+            pass
+
     @function_tool
     async def record_user_name(name: str) -> str:
         """Save the caller's first name when they tell you it, so we can remember
         and reuse it. Call this exactly once, as soon as you learn their name."""
         clean = (name or "").strip()
         if clean:
-            try:
-                # Push to the frontend so it can persist the name for next time.
-                await ctx.room.local_participant.set_attributes({"user_name": clean})
-            except Exception:
-                pass
+            await _set_attr(user_name=clean)  # frontend persists it for next time
         return "saved"
+
+    @function_tool
+    async def open_phone_form() -> str:
+        """Show the on-screen phone-number form to the caller. A small modal appears
+        in the middle of their screen while the call stays live, so they can type
+        their phone number (with country code). Call this when they want to book a
+        meeting and you're about to collect their number. After calling it, tell them
+        the form has appeared and what to enter, then wait for their number."""
+        await _set_attr(open_phone_form=uuid.uuid4().hex)  # new value each time -> reopens
+        return "form_shown"
+
+    @function_tool
+    async def send_booking_link(phone_number: str) -> str:
+        """Once the caller has given AND confirmed their phone number, send them the
+        Calendly booking link over WhatsApp. Pass the full number including country
+        code. Returns 'sent' on success. Only call after they confirm the number."""
+        phone = (phone_number or state.get("phone") or "").strip()
+        digits = _digits_only(phone)
+        if len(digits) < 8:
+            return "invalid_number"
+        state["phone"] = phone
+        await _set_attr(save_user_phone=digits)  # frontend pre-fills WhatsApp export later
+        url = await asyncio.to_thread(_calendly_booking_url)
+        if not url:
+            return "no_link_configured"
+        ok = await asyncio.to_thread(
+            _send_whatsapp,
+            digits,
+            f"Hey! Here's your Iklipse booking link — pick a time that suits you: {url}",
+        )
+        return "sent" if ok else "send_failed"
 
     session = build_session(ctx)
     await session.start(
         room=ctx.room,
-        agent=Agent(instructions=instructions_for(known_name), tools=[record_user_name]),
+        agent=Agent(
+            instructions=instructions_for(known_name),
+            tools=[record_user_name, open_phone_form, send_booking_link],
+        ),
         room_input_options=RoomInputOptions(),
     )
+
+    # Listen for the phone form's browser-side events (the caller submits a number,
+    # or the form sits empty). The frontend sets these as its own participant
+    # attributes; drive the next agent turn from them.
+    agent_identity = ctx.room.local_participant.identity
+    loop = asyncio.get_running_loop()
+
+    async def _on_phone_submitted(phone: str) -> None:
+        state["phone"] = phone
+        session.generate_reply(
+            instructions=(
+                f"The caller just submitted their phone number through the form: {phone}. "
+                "Read it back to them clearly and naturally, then ask them to confirm it's "
+                "right. Do not call any tool or send anything until they confirm."
+            )
+        )
+
+    async def _on_phone_idle() -> None:
+        session.generate_reply(
+            instructions=(
+                "The phone form has been sitting empty for a few seconds. Gently check in — "
+                "ask if they've had a chance to enter their number yet. Keep it brief and warm."
+            )
+        )
+
+    def _on_attrs_changed(changed: dict, participant) -> None:
+        try:
+            if getattr(participant, "identity", None) == agent_identity:
+                return  # ignore the agent's own attribute writes
+            phone = changed.get("phone_number")
+            if phone:
+                loop.create_task(_on_phone_submitted(phone))
+            if changed.get("phone_form_idle"):
+                loop.create_task(_on_phone_idle())
+        except Exception:
+            pass
+
+    ctx.room.on("participant_attributes_changed", _on_attrs_changed)
 
     # Speak first, instantly.
     greeting_pcm = ctx.proc.userdata.get("greeting_pcm")

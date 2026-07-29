@@ -251,12 +251,19 @@ async function connect() {
   room.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => driveOrb(speakers));
   room.on(RoomEvent.Disconnected, () => setStatus('Disconnected'));
 
-  // The agent pushes the caller's name here once it learns it — persist for next call.
+  // The agent pushes signals here via its participant attributes: the caller's
+  // name / phone (persist for next call), and open/close the phone form mid-call.
   room.on(RoomEvent.ParticipantAttributesChanged, (changed: Record<string, string>) => {
     const n = changed?.user_name;
     if (n) {
       try { localStorage.setItem('ikli_user_name', n); } catch {}
     }
+    const phone = changed?.save_user_phone;
+    if (phone) {
+      try { localStorage.setItem('ikli_user_phone', phone); } catch {}
+    }
+    if (changed?.open_phone_form) window.__openPhoneForm?.();
+    if (changed?.close_phone_form) window.__closePhoneFormUI?.();
   });
 
   await room.connect(url, token);
@@ -305,6 +312,11 @@ declare global {
     __voiceDisconnect?: () => void;
     __getTranscript?: () => { role: string; text: string }[];
     setOrbSentiment?: (v: number) => void;
+    // Phone-form bridge (UI lives in index.html, room lives here).
+    __openPhoneForm?: () => void;
+    __closePhoneFormUI?: () => void;
+    __submitPhone?: (phone: string) => void;
+    __phoneFormIdle?: () => void;
   }
 }
 
@@ -318,6 +330,22 @@ window.__voiceConnect = () => {
 
 window.__voiceDisconnect = () => {
   disconnect().catch((err) => console.error(err));
+};
+
+// Caller submitted their phone number in the form -> tell the agent (via our
+// participant attribute) and remember it for the WhatsApp export pre-fill.
+window.__submitPhone = (phone: string) => {
+  const p = (phone || '').trim();
+  if (!p || !room) return;
+  try { localStorage.setItem('ikli_user_phone', p); } catch {}
+  room.localParticipant.setAttributes({ phone_number: p }).catch(() => {});
+};
+
+// Form has sat empty for a few seconds -> nudge the agent to check in.
+// Value changes each time so a re-open still fires the agent's change handler.
+window.__phoneFormIdle = () => {
+  if (!room) return;
+  room.localParticipant.setAttributes({ phone_form_idle: Date.now().toString() }).catch(() => {});
 };
 
 window.__getTranscript = () => getTranscript();
