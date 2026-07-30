@@ -421,9 +421,18 @@ async def entrypoint(ctx: agents.JobContext):
     async def _on_idle() -> None:
         session.generate_reply(
             instructions=(
-                "The form has been sitting empty and the caller has gone quiet. Check in "
-                "briefly and warmly: ask if they're still there and whether they've had a "
-                "chance to enter it. Keep it short."
+                "The caller has gone quiet with the form open. Check in briefly and warmly: "
+                "ask if they're still there and whether they've had a chance to enter it. "
+                "One short sentence."
+            )
+        )
+
+    async def _on_idle_end() -> None:
+        session.generate_reply(
+            instructions=(
+                "The caller has been inactive for a while and hasn't responded. Politely say "
+                "you'll let them go for now since it seems they've stepped away, and to reach "
+                "out any time. Warm, brief, one or two short sentences. This ends the call."
             )
         )
 
@@ -441,6 +450,8 @@ async def entrypoint(ctx: agents.JobContext):
                 loop.create_task(_on_submitted(value))
         elif t == "idle":
             loop.create_task(_on_idle())
+        elif t == "idle_end":
+            loop.create_task(_on_idle_end())
 
     ctx.room.on("data_received", _on_data)
 

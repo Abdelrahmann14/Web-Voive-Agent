@@ -197,15 +197,16 @@ function driveOrb(participants: Participant[]) {
   if (agentSpeaking) {
     setStatus('Speaking');
     window.setOrbSentiment?.(0.8);
-    window.__pauseCollectIdle?.();  // someone is talking, so it's not silence
+    window.__setAgentSpeaking?.(true);   // don't let the idle watch talk over the agent
   } else if (userSpeaking) {
     setStatus('Listening');
     window.setOrbSentiment?.(0.5);
-    window.__pauseCollectIdle?.();
+    window.__setAgentSpeaking?.(false);
+    window.__collectActivity?.();         // caller is talking -> reset the idle clock
   } else {
     setStatus('Connected');
     window.setOrbSentiment?.(0.5);
-    window.__resumeCollectIdle?.(); // everyone quiet -> start the silence countdown
+    window.__setAgentSpeaking?.(false);
   }
 }
 
@@ -327,10 +328,11 @@ declare global {
     // Booking-form bridge (form UI lives in index.html, the room lives here).
     __openCollectForm?: () => void;
     __closeCollectFormUI?: () => void;
-    __pauseCollectIdle?: () => void;
-    __resumeCollectIdle?: () => void;
+    __collectActivity?: () => void;
+    __setAgentSpeaking?: (v: boolean) => void;
     __submitCollect?: (value: string) => void;
     __collectIdleSignal?: () => void;
+    __collectIdleEnd?: () => void;
   }
 }
 
@@ -366,6 +368,11 @@ window.__submitCollect = (value: string) => {
 // Form has sat empty and the caller is silent -> nudge the agent to check in.
 window.__collectIdleSignal = () => {
   __publishToAgent({ type: 'idle' });
+};
+
+// Prolonged inactivity -> agent says it will end the call for inactivity.
+window.__collectIdleEnd = () => {
+  __publishToAgent({ type: 'idle_end' });
 };
 
 window.__getTranscript = () => getTranscript();

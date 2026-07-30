@@ -85,6 +85,13 @@
       pointer-events: all;
     }
 
+    /* The End / report screen scrolls. Anchor its content to the top (not
+       justify-content:center) so a long transcript never pushes the top of the
+       report out of reach on mobile (the classic centered-flex + overflow bug). */
+    #screen-ended {
+      justify-content: flex-start;
+    }
+
     /* desktop-optimized containers */
     .content-max-width {
       width: 100%;
@@ -1249,41 +1256,61 @@
     }
 
     // ---- Booking form (phone or email, auto-detected) ---------------------
-    let __collectTouched = false;
-    let __collectTimers = [];
+    // Inactivity watch (spec): after 5s idle the agent checks in; at 30s it asks
+    // again; at 40s it says it will end for inactivity and the call ends. Typing,
+    // tapping the field, or the caller speaking resets the clock. A 1s poller drives
+    // it, so it never depends on a speaker-stopped event firing.
+    let __collectLastActivity = 0;
+    let __collectAgentSpeaking = false;
+    let __collectIdleInterval = null;
+    let __collectFired = { n1: false, n2: false, end: false };
 
     function __collectModalOpen() {
       const m = document.getElementById('collect-modal');
       return m && m.style.display === 'flex';
     }
 
-    function __clearCollectTimers() {
-      __collectTimers.forEach(t => clearTimeout(t));
-      __collectTimers = [];
+    function __collectResetActivity() {
+      __collectLastActivity = Date.now();
+      __collectFired = { n1: false, n2: false, end: false };
     }
 
-    // Silence watch: nudge at 5/10/15s, end the call at 20s of continuous silence.
-    // Any typing (touched) or the caller speaking (resetCollectIdle) restarts it.
-    function __startCollectSilenceWatch() {
-      __clearCollectTimers();
-      const stillSilent = () => __collectModalOpen() && !__collectTouched
-        && !((document.getElementById('collect-field') || {}).value || '').trim();
-      const nudge = () => { if (stillSilent()) { try { window.__collectIdleSignal && window.__collectIdleSignal(); } catch (e) {} } };
-      __collectTimers.push(setTimeout(nudge, 5000));
-      __collectTimers.push(setTimeout(nudge, 10000));
-      __collectTimers.push(setTimeout(nudge, 15000));
-      __collectTimers.push(setTimeout(() => {
-        if (stillSilent()) { window.__closeCollectFormUI(); if (typeof confirmEndSession === 'function') confirmEndSession(); }
-      }, 20000));
+    function __collectStopWatch() {
+      if (__collectIdleInterval) { clearInterval(__collectIdleInterval); __collectIdleInterval = null; }
     }
 
-    // Someone is speaking -> pause the silence countdown (no nudge mid-sentence,
-    // and the caller reading the number aloud is never cut off).
-    window.__pauseCollectIdle = function () { __clearCollectTimers(); };
-    // Everyone went quiet -> (re)start the silence countdown from zero.
-    window.__resumeCollectIdle = function () {
-      if (__collectModalOpen() && !__collectTouched) __startCollectSilenceWatch();
-    };
+    function __collectTick() {
+      if (!__collectModalOpen()) { __collectStopWatch(); return; }
+      if (__collectAgentSpeaking) return;                 // never nudge over the agent
+      const idleMs = Date.now() - __collectLastActivity;
+      if (!__collectFired.end && idleMs >= 40000) {
+        __collectFired.end = true;
+        __collectStopWatch();
+        try { window.__collectIdleEnd && window.__collectIdleEnd(); } catch (e) {}
+        // Let the goodbye play, then end the call.
+        setTimeout(() => {
+          window.__closeCollectFormUI();
+          if (typeof confirmEndSession === 'function') confirmEndSession();
+        }, 6000);
+      } else if (!__collectFired.n2 && idleMs >= 30000) {
+        __collectFired.n2 = true;
+        try { window.__collectIdleSignal && window.__collectIdleSignal(); } catch (e) {}
+      } else if (!__collectFired.n1 && idleMs >= 5000) {
+        __collectFired.n1 = true;
+        try { window.__collectIdleSignal && window.__collectIdleSignal(); } catch (e) {}
+      }
+    }
+
+    function __collectStartWatch() {
+      __collectResetActivity();
+      __collectStopWatch();
+      __collectIdleInterval = setInterval(__collectTick, 1000);
+    }
+
+    // The caller did something -> reset the inactivity clock.
+    window.__collectActivity = function () { if (__collectModalOpen()) __collectResetActivity(); };
+    // Track whether the agent is currently speaking, so we never talk over it.
+    window.__setAgentSpeaking = function (v) { __collectAgentSpeaking = !!v; };
 
     // Agent opened the booking form. One generic form takes a phone number OR an
     // email; the type is auto-detected on submit.
@@ -1291,7 +1318,6 @@
       const m = document.getElementById('collect-modal');
       const f = document.getElementById('collect-field');
       if (!m || !f) return;
-      __collectTouched = false;
       f.value = '';
       // Pre-fill with whatever contact we already saved (phone preferred, else email).
       try {
@@ -1303,15 +1329,17 @@
       // Do NOT auto-focus: popping the mobile keyboard here triggers a viewport
       // resize (and a WebGL buffer realloc) that stutters the agent's speech. The
       // field is tappable, so the caller focuses it when ready.
-      f.oninput = () => { __collectTouched = true; __clearCollectTimers(); };
-      __startCollectSilenceWatch();
+      f.oninput = window.__collectActivity;
+      f.onfocus = window.__collectActivity;
+      f.onclick = window.__collectActivity;
+      __collectStartWatch();
     };
 
     // Agent closed the form (or we're moving on / ending).
     window.__closeCollectFormUI = function () {
       const m = document.getElementById('collect-modal');
       if (m) m.style.display = 'none';
-      __clearCollectTimers();
+      __collectStopWatch();
     };
 
     function closeCollectForm() { window.__closeCollectFormUI(); }
@@ -1320,7 +1348,7 @@
       const f = document.getElementById('collect-field');
       const val = (f && f.value || '').trim();
       if (!val) { if (f) f.focus(); return; }
-      __clearCollectTimers();
+      __collectStopWatch();
       try { window.__submitCollect && window.__submitCollect(val); } catch (e) {}
       window.__closeCollectFormUI();
     }
