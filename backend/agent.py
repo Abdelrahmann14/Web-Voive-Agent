@@ -253,7 +253,7 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
     return AgentSession(
         stt=deepgram.STT(**stt_kwargs),
         llm=google.LLM(              # UNCHANGED per requirement
-            model=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+            model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite"),  # flash-lite = low TTFT
             api_key=os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"),
         ),
         tts=elevenlabs.TTS(
@@ -270,15 +270,15 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
                 similarity_boost=0.75,
                 style=0.0,
                 use_speaker_boost=True,
-                speed=0.85,
+                speed=0.82,
             ),
             api_key=os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"),
         ),
         vad=vad,
         turn_detection="stt",          # use Deepgram endpointing (fast) instead of heavy EOU model
         preemptive_generation=True,    # begin the reply before the user fully stops
-        min_endpointing_delay=0.15,    # respond quickly after the user stops
-        max_endpointing_delay=3.0,
+        min_endpointing_delay=0.10,    # respond as soon as the user stops
+        max_endpointing_delay=2.0,     # cap the wait for a slow trailing pause
         min_interruption_duration=0.3,
         aec_warmup_duration=0.5,       # trims ~2.5 s off startup vs the 3 s default
     )

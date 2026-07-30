@@ -226,16 +226,10 @@ async function connect() {
   setStatus('Connecting');
   resetTranscript();
 
-  // 1. Get a token + server URL. If we already know the caller's name (returning
-  //    visitor), pass it so the agent greets them by name and skips asking.
-  let knownName = '';
-  try {
-    knownName = localStorage.getItem('ikli_user_name') || '';
-  } catch {}
-  const tokenUrl = knownName
-    ? `${TOKEN_ENDPOINT}?name=${encodeURIComponent(knownName)}`
-    : TOKEN_ENDPOINT;
-  const res = await fetch(tokenUrl, { method: 'POST' });
+  // 1. Get a token + server URL. Every page load is a brand-new session: we never
+  //    persist anything across reloads, so we never pass a remembered name (the
+  //    agent always greets fresh and asks who it's talking to).
+  const res = await fetch(TOKEN_ENDPOINT, { method: 'POST' });
   if (!res.ok) throw new Error(`token request failed: ${res.status}`);
   const { url, token, identity } = await res.json();
   localIdentity = identity;
@@ -255,8 +249,9 @@ async function connect() {
   room.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => driveOrb(speakers));
   room.on(RoomEvent.Disconnected, () => setStatus('Disconnected'));
 
-  // The agent signals the browser over the reliable data channel (topic 'ikli'):
-  // persist the caller's name / phone / email, and open/close the booking form.
+  // The agent signals the browser over the reliable data channel (topic 'ikli').
+  // Contact details are kept IN MEMORY only (window globals) for this page load,
+  // so a refresh or reopen starts a completely fresh session with no memory.
   room.on(RoomEvent.DataReceived, (payload: Uint8Array, _p?: unknown, _k?: unknown, topic?: string) => {
     if (topic && topic !== 'ikli') return;
     let msg: any;
@@ -264,11 +259,11 @@ async function connect() {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'name':
-        if (msg.name) { try { localStorage.setItem('ikli_user_name', msg.name); } catch {} }
+        if (msg.name) window.__ikliName = msg.name;
         break;
       case 'save':
-        if (msg.phone) { try { localStorage.setItem('ikli_user_phone', msg.phone); } catch {} }
-        if (msg.email) { try { localStorage.setItem('ikli_user_email', msg.email); } catch {} }
+        if (msg.phone) window.__ikliPhone = msg.phone;
+        if (msg.email) window.__ikliEmail = msg.email;
         break;
       case 'open_form':
         window.__openCollectForm?.();
@@ -333,6 +328,10 @@ declare global {
     __submitCollect?: (value: string) => void;
     __collectIdleSignal?: () => void;
     __collectIdleEnd?: () => void;
+    // In-memory session contact (reset on every page load; no persistence).
+    __ikliName?: string;
+    __ikliPhone?: string;
+    __ikliEmail?: string;
   }
 }
 
@@ -360,8 +359,7 @@ function __publishToAgent(obj: any) {
 window.__submitCollect = (value: string) => {
   const v = (value || '').trim();
   if (!v) return;
-  const isEmail = v.includes('@');
-  try { localStorage.setItem(isEmail ? 'ikli_user_email' : 'ikli_user_phone', v); } catch {}
+  if (v.includes('@')) window.__ikliEmail = v; else window.__ikliPhone = v;  // memory only
   __publishToAgent({ type: 'submit', value: v });
 };
 

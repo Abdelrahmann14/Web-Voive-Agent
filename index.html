@@ -92,6 +92,17 @@
       justify-content: flex-start;
     }
 
+    /* Session-report loading spinner */
+    .report-spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 76, 57, 0.18);
+      border-top-color: #ff4c39;
+      animation: report-spin 0.8s linear infinite;
+    }
+    @keyframes report-spin { to { transform: rotate(360deg); } }
+
     /* desktop-optimized containers */
     .content-max-width {
       width: 100%;
@@ -862,6 +873,15 @@
   <div class="ui-layer" id="screen-ended" style="display:none;overflow-y:auto;pointer-events:auto;padding:112px 0 48px">
     <div style="max-width:500px;width:90%;display:flex;flex-direction:column;align-items:center">
 
+      <!-- Loading: shown until the AI summary is fully generated. -->
+      <div id="report-loading" style="display:flex;flex-direction:column;align-items:center;gap:18px;padding:70px 0">
+        <div class="report-spinner" aria-hidden="true"></div>
+        <p style="font-size:15px;color:#71717A;font-weight:400;letter-spacing:0.02em">Generating your session report...</p>
+      </div>
+
+      <!-- Report: revealed only once the summary is ready. -->
+      <div id="report-content" style="display:none;width:100%;flex-direction:column;align-items:center">
+
       <h2 style="font-size:32px;font-weight:800;
                 margin-top:0;text-align:center;letter-spacing:-0.02em">
         Session Report
@@ -913,7 +933,7 @@
         <div id="export-options" style="display:flex;justify-content:center;gap:20px;align-items:center">
           <p style="font-size:12px;color:#71717A;font-weight:600;letter-spacing:0.1em;text-transform:uppercase">Export via:</p>
           <button onclick="showExportInput('whatsapp')" class="glass-card" data-tooltip="WhatsApp" style="width:56px;height:56px;border-radius:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Export via WhatsApp">
-            <span class="material-symbols-outlined" style="color:#22C55E">chat_bubble</span>
+            <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path fill="#25D366" d="M16.004 0h-.008C7.174 0 .002 7.174.002 16c0 3.5 1.128 6.744 3.05 9.38L1.05 31.05l5.86-1.874A15.9 15.9 0 0 0 16.004 32C24.826 32 32 24.826 32 16S24.826 0 16.004 0z"/><path fill="#fff" d="M25.31 22.6c-.386 1.09-1.92 1.994-3.142 2.258-.836.178-1.928.32-5.606-1.204-4.706-1.95-7.736-6.732-7.972-7.042-.226-.31-1.902-2.532-1.902-4.83s1.174-3.428 1.648-3.912c.39-.398.99-.58 1.566-.58.186 0 .354.01.506.018.446.02.67.046.964.748.386.906 1.31 3.204 1.42 3.44.112.236.224.554.058.864-.156.32-.294.46-.53.708-.236.248-.46.44-.696.706-.216.234-.46.486-.198.93.262.444 1.166 1.92 2.504 3.11 1.726 1.534 3.144 2.008 3.612 2.204.35.146.766.112 1.02-.16.322-.35.72-.93 1.124-1.502.286-.408.648-.458 1.028-.316.386.138 2.44 1.15 2.86 1.36.42.21.7.31.802.484.1.174.1 1.002-.286 2.092z"/></svg>
           </button>
           <button onclick="showExportInput('email')" class="glass-card" data-tooltip="Email" style="width:56px;height:56px;border-radius:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Export via Email">
             <span class="material-symbols-outlined" style="color:#ff4c39">mail</span>
@@ -941,6 +961,7 @@
         onmouseout="this.style.color='#52525B'">
         ← Start New Session
       </button>
+      </div>
     </div>
   </div>
 
@@ -1185,19 +1206,32 @@
       document.getElementById('final-duration').textContent = m + ':' + String(s).padStart(2,'0');
       
       document.getElementById('screen-active').style.display = 'none';
-      document.getElementById('screen-ended').style.display = 'flex';
+      const endedEl = document.getElementById('screen-ended');
+      const loadingEl = document.getElementById('report-loading');
+      const contentEl = document.getElementById('report-content');
+      endedEl.style.display = 'flex';
+      // Show the loader; keep the report hidden until the summary is ready.
+      if (loadingEl) loadingEl.style.display = 'flex';
+      if (contentEl) contentEl.style.display = 'none';
 
       // Show both export options (WhatsApp + Email); each pre-fills when picked.
       try { resetExportOptions(); } catch (e) {}
 
-      // ---- Real session report ----
       const turns = (window.__getTranscript ? window.__getTranscript() : []) || [];
       const transcriptEl = document.getElementById('final-transcription');
       const summaryEl = document.getElementById('final-summary');
 
+      // Reveal the finished report and scroll it to the top so it's fully visible.
+      const reveal = () => {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (contentEl) contentEl.style.display = 'flex';
+        endedEl.scrollTop = 0;
+      };
+
       if (!turns.length) {
         transcriptEl.textContent = 'No speech was recorded in this session.';
         summaryEl.textContent = 'Nothing to summarize.';
+        reveal();
         return;
       }
 
@@ -1206,8 +1240,7 @@
         .map(t => `<strong style="color:#ff4c39">${t.role}:</strong> ${t.text}`)
         .join('<br><br>');
 
-      // Ask the backend (server-side Gemini) for a real summary.
-      summaryEl.textContent = 'Generating summary…';
+      // Ask the backend (server-side Gemini) for a real summary, then reveal.
       const plain = turns.map(t => `${t.role}: ${t.text}`).join('\n');
       fetch('/summarize', {
         method: 'POST',
@@ -1216,7 +1249,8 @@
       })
         .then(r => r.json())
         .then(d => { summaryEl.textContent = d.summary || 'Summary unavailable.'; })
-        .catch(() => { summaryEl.textContent = 'Summary unavailable (backend not reachable).'; });
+        .catch(() => { summaryEl.textContent = 'Summary unavailable (backend not reachable).'; })
+        .finally(reveal);
     }
 
     let currentExportMethod = '';
@@ -1235,17 +1269,13 @@
       if (method === 'whatsapp') {
         field.placeholder = "+1 234 567 8900 (Country Code + Number)";
         field.type = "tel";
-        // Pre-fill the number the caller gave during the call, if we saved one.
-        let saved = '';
-        try { saved = localStorage.getItem('ikli_user_phone') || ''; } catch {}
-        field.value = saved;
+        // Pre-fill the number the caller gave during THIS session (in-memory only).
+        field.value = window.__ikliPhone || '';
       } else {
         field.placeholder = "Enter your email address";
         field.type = "email";
-        // Pre-fill the email the caller gave during the call, if we saved one.
-        let saved = '';
-        try { saved = localStorage.getItem('ikli_user_email') || ''; } catch {}
-        field.value = saved;
+        // Pre-fill the email the caller gave during THIS session (in-memory only).
+        field.value = window.__ikliEmail || '';
       }
       field.focus();
     }
@@ -1256,10 +1286,10 @@
     }
 
     // ---- Booking form (phone or email, auto-detected) ---------------------
-    // Inactivity watch (spec): after 5s idle the agent checks in; at 30s it asks
-    // again; at 40s it says it will end for inactivity and the call ends. Typing,
-    // tapping the field, or the caller speaking resets the clock. A 1s poller drives
-    // it, so it never depends on a speaker-stopped event firing.
+    // Inactivity watch (spec): after 5s idle the agent asks "are you still there?";
+    // at 10s it asks again; at 15s it says it's ending for inactivity and the call
+    // ends. Typing, tapping the field, or the caller speaking resets the clock. A 1s
+    // poller drives it, so it never depends on a speaker-stopped event firing.
     let __collectLastActivity = 0;
     let __collectAgentSpeaking = false;
     let __collectIdleInterval = null;
@@ -1283,7 +1313,7 @@
       if (!__collectModalOpen()) { __collectStopWatch(); return; }
       if (__collectAgentSpeaking) return;                 // never nudge over the agent
       const idleMs = Date.now() - __collectLastActivity;
-      if (!__collectFired.end && idleMs >= 40000) {
+      if (!__collectFired.end && idleMs >= 15000) {
         __collectFired.end = true;
         __collectStopWatch();
         try { window.__collectIdleEnd && window.__collectIdleEnd(); } catch (e) {}
@@ -1292,7 +1322,7 @@
           window.__closeCollectFormUI();
           if (typeof confirmEndSession === 'function') confirmEndSession();
         }, 6000);
-      } else if (!__collectFired.n2 && idleMs >= 30000) {
+      } else if (!__collectFired.n2 && idleMs >= 10000) {
         __collectFired.n2 = true;
         try { window.__collectIdleSignal && window.__collectIdleSignal(); } catch (e) {}
       } else if (!__collectFired.n1 && idleMs >= 5000) {
@@ -1319,12 +1349,9 @@
       const f = document.getElementById('collect-field');
       if (!m || !f) return;
       f.value = '';
-      // Pre-fill with whatever contact we already saved (phone preferred, else email).
-      try {
-        const p = localStorage.getItem('ikli_user_phone') || '';
-        const e = localStorage.getItem('ikli_user_email') || '';
-        if (p) f.value = p; else if (e) f.value = e;
-      } catch (e) {}
+      // Pre-fill with a contact given earlier THIS session (in-memory only, phone first).
+      if (window.__ikliPhone) f.value = window.__ikliPhone;
+      else if (window.__ikliEmail) f.value = window.__ikliEmail;
       m.style.display = 'flex';
       // Do NOT auto-focus: popping the mobile keyboard here triggers a viewport
       // resize (and a WebGL buffer realloc) that stutters the agent's speech. The
@@ -1383,7 +1410,7 @@
           inputArea.style.display = 'none';
           if (data.ok) {
             successMsg.style.color = '#22C55E';
-            successMsg.innerHTML = 'Sent to WhatsApp 📱';
+            successMsg.textContent = 'Sent to WhatsApp successfully';
           } else {
             successMsg.style.color = '#ff4c39';
             successMsg.textContent = data.error || 'Failed to send.';
@@ -1423,7 +1450,7 @@
           inputArea.style.display = 'none';
           if (data.ok) {
             successMsg.style.color = '#22C55E';
-            successMsg.innerHTML = 'Sent to your email 📧';
+            successMsg.textContent = 'Sent to your email successfully';
           } else {
             successMsg.style.color = '#ff4c39';
             successMsg.textContent = data.error || 'Failed to send.';
