@@ -1300,7 +1300,9 @@
         if (p) f.value = p; else if (e) f.value = e;
       } catch (e) {}
       m.style.display = 'flex';
-      setTimeout(() => f.focus(), 60);
+      // Do NOT auto-focus: popping the mobile keyboard here triggers a viewport
+      // resize (and a WebGL buffer realloc) that stutters the agent's speech. The
+      // field is tappable, so the caller focuses it when ready.
       f.oninput = () => { __collectTouched = true; __clearCollectTimers(); };
       __startCollectSilenceWatch();
     };
@@ -1518,7 +1520,13 @@
     }
     animate();
 
+    let __lastW = window.innerWidth;
     window.addEventListener('resize', () => {
+      // Ignore height-only changes (mobile keyboard / address bar). Reallocating
+      // the WebGL buffers on every keyboard toggle stutters the agent's audio, and
+      // the orb layout only depends on width anyway.
+      if (window.innerWidth === __lastW) return;
+      __lastW = window.innerWidth;
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
       applyResponsiveCamera();          // re-pull the camera for the new width
