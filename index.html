@@ -187,8 +187,6 @@
     }
     /* On the report the orb steps back so the text stays readable. */
     body.is-ended #orb-canvas { opacity: .28; }
-    /* The orb can be poked (it reacts, and in a call Ikli says something). */
-    #orb-canvas.orb-hover { cursor: pointer; }
 
     /* UI layers sit above the canvas; only real controls take the pointer. */
     .ui-layer {
@@ -1268,10 +1266,6 @@
     let targetTheme = material.uniforms.uTheme.value;
     let voiceEnv = 0;      // smoothed loudness of the agent's voice
     let kick = 0;          // decaying beat added on every word
-    // Poke reaction: the orb is shoved away from the finger, squeezes and springs
-    // back with a little wobble (world units / scale fraction), plus a brief flare.
-    const poke = { x: 0, y: 0, vx: 0, vy: 0, s: 0, vs: 0, spin: 0, flash: 0 };
-    let orbBaseX = 0.0;
     let timerInterval = null;
     let seconds = 0;
 
@@ -1326,7 +1320,6 @@
     }
     layoutOrb();
     baseScale = targetScale;
-    orbBaseX = targetX;
     orbBaseY = targetY;
     orb.position.set(targetX, targetY, 0);
 
@@ -1340,41 +1333,6 @@
         r: (ORB_R * orb.scale.x) / worldPerPx(),
       };
     };
-
-    // ---- Poking the orb ----------------------------------------------------
-    // A click / tap on the orb shoves it away from the finger; it springs back.
-    // In a call the agent hears about it too (bursts of taps are sent as one).
-    const pokeNDC = new THREE.Vector2();
-    let pokeBurst = 0;
-    let pokeTimer = 0;
-    function pokeOrb(px, py) {
-      const o = window.__orbScreen();
-      let dx = o.x - px;
-      let dy = o.y - py;
-      const d = Math.hypot(dx, dy) || 1;
-      dx /= d;
-      dy /= d;
-      const rWorld = ORB_R * orb.scale.x;
-      const m = reduceMotionMQ.matches ? 0.25 : 1;
-      const cap = rWorld * 3;
-      poke.vx = THREE.MathUtils.clamp(poke.vx + dx * rWorld * 1.5 * m, -cap, cap);
-      poke.vy = THREE.MathUtils.clamp(poke.vy - dy * rWorld * 1.5 * m, -cap, cap);
-      poke.vs = Math.max(-4, poke.vs - 1.7 * m);
-      poke.spin = Math.min(2.5, poke.spin + (dx >= 0 ? 0.9 : -0.9) * m);
-      poke.flash = 1;
-      if (appState !== 'active') return;
-      pokeBurst++;
-      clearTimeout(pokeTimer);
-      pokeTimer = setTimeout(() => {
-        if (appState === 'active') window.__ikliSend?.({ type: 'poke', n: pokeBurst });
-        pokeBurst = 0;
-      }, 350);
-    }
-    renderer.domElement.addEventListener('pointerdown', (e) => {
-      pokeNDC.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-      raycaster.setFromCamera(pokeNDC, camera);
-      if (raycaster.intersectObject(orb).length) pokeOrb(e.clientX, e.clientY);
-    });
 
     // ---- Screens & modals ------------------------------------------------
     const SCREENS = ['screen-idle', 'screen-active', 'screen-ended'];
@@ -1626,6 +1584,7 @@
     // The agent sees what the caller sees: the form being shown, what's typed
     // (throttled), focus, and closing are all mirrored to it (see src/voice-agent.ts).
     let __collectDraft = '';          // kept when the form is closed without sending
+    let __collectOpenedAt = 0;        // a click landing as the form pops up isn't a "Cancel"
     let __fieldSentAt = 0;
     let __fieldTimer = 0;
     function __collectField() { return document.getElementById('collect-field'); }
@@ -1656,6 +1615,7 @@
       // (in-memory only, phone first).
       f.value = __collectDraft || window.__ikliPhone || window.__ikliEmail || '';
       m.querySelector('.modal-card').classList.remove('nudge');
+      __collectOpenedAt = Date.now();
       openModal('collect-modal');
       // Do NOT auto-focus: popping the mobile keyboard here triggers a viewport
       // resize (and a WebGL buffer realloc) that stutters the agent's speech. The
@@ -1680,6 +1640,7 @@
     };
 
     function closeCollectForm() {
+      if (Date.now() - __collectOpenedAt < 800) return;   // accidental click as it appeared
       window.__closeCollectFormUI();
       try { window.__collectClosed && window.__collectClosed(__collectDraft); } catch (e) {}
     }
@@ -1840,48 +1801,36 @@
 
       u.uTime.value = elapsed;
       intensityBase = lerp(intensityBase, targetIntensity, kf(0.04));
-      u.uIntensity.value = intensityBase + beat * 0.12 + poke.flash * 0.18;
+      u.uIntensity.value = intensityBase + beat * 0.12;
       u.uState.value = lerp(u.uState.value, targetState, kf(0.04));
       u.uSentiment.value = lerp(u.uSentiment.value, targetSentiment, kf(0.02));
       u.uTheme.value = lerp(u.uTheme.value, targetTheme, kf(0.12));
 
       // Hover (mouse only)
       raycaster.setFromCamera(mouseVector, camera);
-      const hovering = raycaster.intersectObject(orb).length > 0;
-      if (hovering !== isHoveringOrb) renderer.domElement.classList.toggle('orb-hover', hovering);
-      isHoveringOrb = hovering;
+      isHoveringOrb = raycaster.intersectObject(orb).length > 0;
       hoverScaleFactor = lerp(hoverScaleFactor, isHoveringOrb ? 1.08 : 1.0, kf(0.08));
       hoverGlowFactor = lerp(hoverGlowFactor, isHoveringOrb ? 2.5 : 1.0, kf(0.08));
 
       // Mouse-responsive rotation
       mouseX = lerp(mouseX, targetOrbMouseX, kf(0.05));
       mouseY = lerp(mouseY, targetOrbMouseY, kf(0.05));
-      // Poke springs (sub-stepped so a slow frame can't blow them up).
-      for (let n = Math.ceil(dt / 0.012), h = dt / n, i = 0; i < n; i++) {
-        poke.vx += (-170 * poke.x - 9 * poke.vx) * h;  poke.x += poke.vx * h;
-        poke.vy += (-170 * poke.y - 9 * poke.vy) * h;  poke.y += poke.vy * h;
-        poke.vs += (-210 * poke.s - 8 * poke.vs) * h;  poke.s += poke.vs * h;
-      }
-      poke.spin *= Math.exp(-dt * 3);
-      poke.flash *= Math.exp(-dt * 4.5);
-
       const spin = dt * 60;
-      orb.rotation.y += (targetRotSpeed + mouseX * 0.02) * spin + poke.spin * dt;
+      orb.rotation.y += (targetRotSpeed + mouseX * 0.02) * spin;
       orb.rotation.x += (targetRotSpeed * 0.4 + mouseY * 0.02) * spin;
 
-      orbBaseX = lerp(orbBaseX, targetX, kf(0.045));
+      orb.position.x = lerp(orb.position.x, targetX, kf(0.045));
       orbBaseY = lerp(orbBaseY, targetY, kf(0.045));
-      orb.position.x = orbBaseX + poke.x;
-      orb.position.y = orbBaseY + Math.sin(elapsed * 1.2) * 0.08 + poke.y;   // gentle float
+      orb.position.y = orbBaseY + Math.sin(elapsed * 1.2) * 0.08;   // gentle float
 
       // Breathing + hover + heartbeat
       baseScale = lerp(baseScale, targetScale * hoverScaleFactor, kf(0.045));
       const breathe = 1.0 + Math.sin(elapsed * 1.5) * 0.02;
-      orb.scale.setScalar(baseScale * breathe * (1 + beat * 0.07) * (1 + poke.s));
+      orb.scale.setScalar(baseScale * breathe * (1 + beat * 0.07));
 
       glowMesh.scale.copy(orb.scale).multiplyScalar(1.2);
       glowMesh.position.copy(orb.position);
-      const baseGlow = 0.03 + u.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02 + beat * 0.05 + poke.flash * 0.06;
+      const baseGlow = 0.03 + u.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02 + beat * 0.05;
       glowMat.opacity = baseGlow * hoverGlowFactor;
 
       renderer.render(scene, camera);

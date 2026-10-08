@@ -46,7 +46,7 @@ from livekit.plugins.anthropic import llm as _anthropic_llm
 from livekit.plugins.elevenlabs import tts as el_tts
 
 from knowledge import full_instructions
-from messaging import digits_only, send_email, send_whatsapp
+from messaging import digits_only, send_email, send_whatsapp, whatsapp_ready
 
 load_dotenv()
 
@@ -247,8 +247,7 @@ class Screen:
         self.link: dict | None = None     # {"channel", "to", "ok", "at"}
         self.hidden_since = 0.0           # tab in the background since (0 = visible)
         self.device = ""
-        self.pokes = 0
-        self.last_poke = 0.0
+        self.whatsapp_down = False        # the WhatsApp line can't send right now
         self.shown = asyncio.Event()      # set when the page confirms the form is up
 
     def _form_line(self) -> str:
@@ -281,10 +280,10 @@ class Screen:
             lines.append(f"Booking link: {how} via {l['channel']} to {l['to']} ({_ago(l['at'])} ago).")
         else:
             lines.append("Booking link: not sent.")
+        if self.whatsapp_down:
+            lines.append("WhatsApp delivery is down right now: offer the booking link by email only.")
         if self.hidden_since:
             lines.append(f"They switched to another tab or app {_ago(self.hidden_since)} ago (can still hear you).")
-        if self.pokes:
-            lines.append(f"They've poked the orb {self.pokes} times this call (last {_ago(self.last_poke)} ago).")
         return "\n".join(lines)
 
 
@@ -387,7 +386,10 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
             "turn_detection": "stt",
             # Respond as soon as the user stops; cap the wait for a slow trailing pause.
             "endpointing": {"min_delay": 0.10, "max_delay": 2.0},
-            "interruption": {"min_duration": 0.3},
+            # Two words to cut Ikli off: a lone "yeah" / "mm-hmm", or a single word of
+            # its own voice leaking back through the caller's speakers, no longer
+            # derails the reply mid-sentence.
+            "interruption": {"min_duration": 0.3, "min_words": 2},
             # Begin the reply before the user fully stops. (Preemptive TTS was
             # measured too: no gain, only wasted TTS characters.)
             "preemptive_generation": {"enabled": True},
@@ -401,9 +403,6 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
 # call itself starts when they press the mic. If they never do, give the slot back
 # (the free LiveKit plan allows only 5 sessions at once).
 PRECONNECT_WAIT_S = float(os.environ.get("PRECONNECT_WAIT_S", "60"))
-
-# Ikli reacts out loud to an orb poke at most this often; extra pokes just add up.
-POKE_COOLDOWN_S = 5.0
 
 
 def _has_mic(p: rtc.RemoteParticipant) -> bool:
@@ -468,6 +467,13 @@ async def entrypoint(ctx: agents.JobContext):
 
     screen = Screen()
 
+    async def _check_whatsapp() -> None:
+        screen.whatsapp_down = not await asyncio.to_thread(whatsapp_ready)
+        if screen.whatsapp_down:
+            logger.warning("WhatsApp (GREEN-API) can't send; booking links go by email only")
+
+    asyncio.ensure_future(_check_whatsapp())
+
     @function_tool
     async def open_contact_form() -> str:
         """Show the on-screen booking form so the caller can type EITHER their phone
@@ -526,6 +532,8 @@ async def entrypoint(ctx: agents.JobContext):
             )
             screen.link = {"channel": "email", "to": addr, "ok": ok, "at": time.monotonic()}
         else:
+            if screen.whatsapp_down:
+                return "whatsapp_unavailable: WhatsApp can't send right now, ask for their email instead"
             digits = digits_only(raw)
             if len(digits) < 8:
                 return "invalid_number"
@@ -566,7 +574,7 @@ async def entrypoint(ctx: agents.JobContext):
     # Bridge the browser back to the agent over the data channel (topic 'ikli').
     # The page mirrors what the caller sees (form open/closed, what's typed, tab
     # hidden, device) into `screen`, which every LLM call reads; only real moments
-    # (a submit, a dismissed form, going quiet, a poke) trigger a reply.
+    # (a submit, a dismissed form, going quiet) trigger a reply.
     def _on_submitted(value: str) -> None:
         if "@" in value:  # they entered an email
             state["email"] = value
@@ -610,56 +618,6 @@ async def entrypoint(ctx: agents.JobContext):
             "out any time. Warm, brief, one or two short sentences. This ends the call."
         ),
     }
-
-    # Pokes: the caller clicked or tapped the orb. Ikli reacts out loud like a person
-    # poked mid-conversation, but never over the caller, never before the greeting is
-    # done, at most once every few seconds, and only now and then once the joke is
-    # old. Extra pokes still count (the screen note carries the total).
-    poke = {"greeted": False, "said_at": 0.0, "said": 0, "said_count": 0}
-
-    def _poke_prompt(burst: int, mid_sentence: bool) -> str:
-        n = screen.pokes
-        if n <= 1:
-            mood = "First poke: surprised, amused."
-        elif n <= 3:
-            mood = "They're doing it again: tease them a little."
-        elif n <= 7:
-            mood = "They keep doing it: mock-offended or mock-exasperated, still friendly."
-        else:
-            mood = "They just won't stop: good-humored resignation, a couple of words."
-        times = f" {burst} times in a row" if burst > 1 else ""
-        follow = (
-            "You were in the middle of saying something: react, then finish your point in one sentence."
-            if mid_sentence
-            else "React, then carry on naturally. If you'd just asked them something, don't ask it "
-            "again; the reaction alone is enough."
-        )
-        return (
-            f"The caller just poked you{times} (clicked or tapped the orb on their screen). "
-            f"That's poke number {n} this call. {mood} A real person's reaction: a few words "
-            "up to one short sentence, playful and a little cheeky, wording you haven't used "
-            f"yet this call. Don't count the pokes out loud every time. {follow}"
-        )
-
-    async def _on_poke(burst: int) -> None:
-        screen.pokes += burst
-        screen.last_poke = now = time.monotonic()
-        if not poke["greeted"] or session.user_state == "speaking" or session.agent_state == "thinking":
-            return
-        if now - poke["said_at"] < POKE_COOLDOWN_S:
-            return
-        if poke["said"] >= 5 and screen.pokes - poke["said_count"] < 5:
-            return
-        mid = session.agent_state == "speaking"
-        if mid and screen.form == "open":
-            return  # don't derail the booking for a joke
-        poke.update(said_at=now, said=poke["said"] + 1, said_count=screen.pokes)
-        if mid:
-            try:
-                await session.interrupt()
-            except Exception:
-                return
-        session.generate_reply(instructions=_poke_prompt(burst, mid))
 
     # A page event that deserves a spoken reaction waits until Ikli isn't mid-sentence,
     # and is dropped if the caller spoke in the meantime or it no longer applies
@@ -705,9 +663,6 @@ async def entrypoint(ctx: agents.JobContext):
                 screen.focused = bool(msg.get("focused"))
             elif t == "visibility":
                 screen.hidden_since = now if msg.get("hidden") else 0.0
-            elif t == "poke":
-                burst = max(1, min(20, int(msg.get("n") or 1)))
-                asyncio.ensure_future(_on_poke(burst))
             elif t == "submit":
                 value = _text(msg)
                 if value:
@@ -754,20 +709,17 @@ async def entrypoint(ctx: agents.JobContext):
 
     # Speak first, instantly.
     greeting_pcm = ctx.proc.userdata.get("greeting_pcm")
-    try:
-        if known_name:
-            # Personalized greeting must be synthesized live (name varies).
-            await session.say(f"Hey {known_name}! What can I do for you?", allow_interruptions=True)
-        elif greeting_pcm:
-            # Play the pre-rendered greeting audio, no synthesis latency.
-            await session.say(
-                FIXED_GREETING, audio=_pcm_to_frames(greeting_pcm), allow_interruptions=True
-            )
-        else:
-            # Fallback: live TTS if pre-render failed.
-            await session.say(FIXED_GREETING, allow_interruptions=True)
-    finally:
-        poke["greeted"] = True
+    if known_name:
+        # Personalized greeting must be synthesized live (name varies).
+        await session.say(f"Hey {known_name}! What can I do for you?", allow_interruptions=True)
+    elif greeting_pcm:
+        # Play the pre-rendered greeting audio, no synthesis latency.
+        await session.say(
+            FIXED_GREETING, audio=_pcm_to_frames(greeting_pcm), allow_interruptions=True
+        )
+    else:
+        # Fallback: live TTS if pre-render failed.
+        await session.say(FIXED_GREETING, allow_interruptions=True)
 
 if __name__ == "__main__":
     agents.cli.run_app(

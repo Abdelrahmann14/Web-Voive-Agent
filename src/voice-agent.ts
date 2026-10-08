@@ -733,8 +733,8 @@ function __publishToAgent(obj: any) {
   room.localParticipant.publishData(bytes, { reliable: true, topic: 'ikli' }).catch(() => {});
 }
 
-// The agent "sees" the caller's screen: index.html mirrors the booking form and
-// orb pokes through this, and the tab going to the background is sent from here.
+// The agent "sees" the caller's screen: index.html mirrors the booking form
+// through this, and the tab going to the background is sent from here.
 window.__ikliSend = (msg) => {
   if (room && live) __publishToAgent(msg);
 };

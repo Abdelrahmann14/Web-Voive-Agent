@@ -45,6 +45,27 @@ def send_whatsapp(phone: str, text: str) -> tuple[bool, str]:
         return False, f"WhatsApp send failed: {e}"
 
 
+def whatsapp_ready() -> bool:
+    """False only when GREEN-API clearly says the WhatsApp line can't send (instance
+    expired, logged out, not configured). Network trouble counts as ready, so a blip
+    never hides WhatsApp."""
+    host = os.environ.get("GREENAPI_HOST", "https://api.green-api.com").rstrip("/")
+    instance = os.environ.get("GREENAPI_ID")
+    token = os.environ.get("GREENAPI_TOKEN")
+    if not (instance and token):
+        return False
+    try:
+        r = requests.get(f"{host}/waInstance{instance}/getStateInstance/{token}", timeout=6)
+    except Exception:
+        return True
+    if r.status_code == 200:
+        try:
+            return (r.json() or {}).get("stateInstance") == "authorized"
+        except ValueError:
+            return True
+    return r.status_code >= 500
+
+
 def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
     """Send a plain-text email via SMTP with an app password (465 SSL or 587 STARTTLS)."""
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
