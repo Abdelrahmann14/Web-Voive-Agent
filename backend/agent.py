@@ -1,18 +1,18 @@
 """
 LiveKit voice agent worker, latency-optimized for English.
 
-Pipeline (LLM unchanged, Google Gemini):
+Pipeline:
     Deepgram nova-3 (STT, English, fast endpointing)
-      -> Google Gemini (LLM, preemptive generation)
+      -> Claude Sonnet 5.5 (LLM, effort low, prompt caching, preemptive generation)
       -> ElevenLabs Flash v2.5 (TTS, auto_mode)
     Silero VAD + STT-based turn detection for fast, natural turn-taking.
 
 Latency choices:
   * language pinned to English everywhere (no auto-detect overhead)
-  * STT endpointing 25 ms + no_delay -> STT finalizes quickly
+  * STT endpointing 60 ms + no_delay -> STT finalizes quickly
   * turn_detection="stt" -> no heavy multilingual EOU model on the critical path
   * VAD min_silence_duration 0.2 s -> responds fast after the user stops
-  * min_endpointing_delay 0.25 s, preemptive_generation -> reply starts early
+  * endpointing min_delay 0.1 s, preemptive generation -> reply starts early
   * aec_warmup_duration 0.5 s -> agent can speak ~2.5 s sooner at call start
   * prewarm loads the VAD once per worker (off the per-call path)
   * greeting via session.say() -> spoken instantly, no LLM roundtrip
@@ -20,32 +20,36 @@ Latency choices:
 Personalization:
   * If the caller's name is known (passed in participant metadata from the
     frontend, e.g. a returning visitor), greet them by name and skip asking.
-  * Otherwise ask for their name right after greeting, then remember it via the
-    record_user_name tool (which also pushes it to the frontend to store).
+  * Otherwise the greeting asks for their name and the model uses it from the
+    conversation (no tool call, so no extra LLM round trip).
 
-Run:  python agent.py dev     (development)
-      python agent.py start   (production, lower overhead)
+Run:  python agent.py start   (fast: jobs run in the warm worker, use this)
+      python agent.py dev     (hot-reload, but re-imports everything per call)
 """
 
 import asyncio
 import json
+import logging
 import os
 import re
-import smtplib
-import ssl
-from email.message import EmailMessage
 
+import anthropic as anthropic_sdk
 import numpy as np
 import requests
 from dotenv import load_dotenv
 from livekit import agents, rtc
-from livekit.agents import Agent, AgentSession, RoomInputOptions, function_tool
-from livekit.plugins import deepgram, elevenlabs, google, silero
+from livekit.agents import NOT_GIVEN, Agent, AgentSession, function_tool
+from livekit.agents.utils import is_given
+from livekit.plugins import anthropic, deepgram, elevenlabs, silero
+from livekit.plugins.anthropic import llm as _anthropic_llm
 from livekit.plugins.elevenlabs import tts as el_tts
 
 from knowledge import full_instructions
+from messaging import digits_only, send_email, send_whatsapp
 
 load_dotenv()
+
+logger = logging.getLogger("ikli")
 
 # Fixed first-time greeting, pre-rendered once at startup so it plays instantly
 # (no live TTS synthesis on the call's critical path).
@@ -62,6 +66,63 @@ KEYTERMS = [
     "color grading", "virtual influencer", "Webflow",
     "Nabil", "Reem", "Cast your shadow",
 ]
+
+
+# The plugin only knows that the 4.6 models reject a trailing assistant message
+# (prefill). Current models reject it too, so a reply triggered without the caller
+# speaking (form submitted/closed, idle check) would 400. Treat every Claude model
+# as no-prefill so the plugin appends the trailing user turn it needs.
+_anthropic_llm._NO_PREFILL_PATTERNS = ("claude-",)
+
+
+class ClaudeLLM(anthropic.LLM):
+    """Claude tuned for a voice call.
+
+    - effort "low": measured first token ~0.85 s vs ~1.3 s at the default effort,
+      with replies just as good for short spoken answers. (Turning thinking off
+      entirely via "between_tools" measured slower, ~1.5 s, so it stays adaptive.)
+    - server-side refusal fallback: if a safety classifier ever declines a turn,
+      the API re-runs it on a fallback model inside the same call instead of
+      leaving the caller in silence.
+    """
+
+    def __init__(self, *, api_key: str | None = None, **kwargs):
+        # The plugin's default client is built on `httpx`, which the current
+        # Anthropic SDK (built on `httpx2`) rejects with a TypeError, so every call
+        # crashed at start. Hand it an SDK-native client instead.
+        client = anthropic_sdk.AsyncAnthropic(
+            api_key=api_key, timeout=anthropic_sdk.Timeout(30.0, connect=5.0)
+        )
+        super().__init__(client=client, api_key=api_key or NOT_GIVEN, **kwargs)
+
+    def chat(self, *, extra_kwargs=NOT_GIVEN, **kwargs):
+        extra = dict(extra_kwargs) if is_given(extra_kwargs) else {}
+        extra.setdefault("output_config", {"effort": os.environ.get("LLM_EFFORT", "low")})
+        extra.setdefault("extra_headers", {"anthropic-beta": "server-side-fallback-2026-07-01"})
+        extra.setdefault("extra_body", {"fallbacks": "default"})
+        return super().chat(extra_kwargs=extra, **kwargs)
+
+
+# Contact details the caller says out loud are captured straight from the
+# transcript (no LLM tool call, so no extra round trip on that turn) and pushed to
+# the browser to pre-fill the booking form and the report export.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_SPOKEN_EMAIL_RE = re.compile(r"\b([\w.+-]+) at ([\w-]+(?: dot [\w-]+)+)\b", re.I)
+_PHONE_IN_SPEECH = re.compile(r"\+?\d[\d\s().-]{6,}\d")
+
+
+def _contacts_in(text: str) -> tuple[str | None, str | None]:
+    email = None
+    if m := _EMAIL_RE.search(text):
+        email = m.group().rstrip(".")
+    elif m := _SPOKEN_EMAIL_RE.search(text):
+        email = f"{m.group(1)}@{m.group(2).replace(' dot ', '.')}".lower()
+    phone = None
+    for m in _PHONE_IN_SPEECH.finditer(text):
+        digits = digits_only(m.group())
+        if len(digits) >= 8:
+            phone = digits
+    return phone, email
 
 
 def instructions_for(name: str | None) -> str:
@@ -107,11 +168,7 @@ async def _pcm_to_frames(pcm: bytes):
         )
 
 
-# ---- Booking: Calendly link + WhatsApp send --------------------------------
-
-def _digits_only(phone: str) -> str:
-    return re.sub(r"\D", "", phone or "")
-
+# ---- Booking: Calendly link -----------------------------------------------
 
 def _calendly_booking_url() -> str:
     """Create a fresh single-use Calendly scheduling link; fall back to the static
@@ -140,80 +197,50 @@ def _calendly_booking_url() -> str:
     return static
 
 
-def _send_whatsapp(phone: str, text: str) -> bool:
-    """Send a WhatsApp message via GREEN-API. Blocking, call via asyncio.to_thread."""
-    host = os.environ.get("GREENAPI_HOST", "https://api.green-api.com").rstrip("/")
-    idi = os.environ.get("GREENAPI_ID")
-    token = os.environ.get("GREENAPI_TOKEN")
-    digits = _digits_only(phone)
-    if not (idi and token and digits):
-        return False
-    try:
-        r = requests.post(
-            f"{host}/waInstance{idi}/sendMessage/{token}",
-            json={"chatId": f"{digits}@c.us", "message": text},
-            timeout=15,
-        )
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
-def _send_email(to: str, subject: str, body: str) -> bool:
-    """Send a plain-text email via SMTP (app password). Blocking; call via to_thread."""
-    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    try:
-        port = int(os.environ.get("SMTP_PORT", "465"))
-    except ValueError:
-        port = 465
-    user = (os.environ.get("SMTP_USER") or "").strip()
-    pwd = (os.environ.get("SMTP_PASS") or "").replace(" ", "")
-    sender = os.environ.get("SMTP_FROM") or user
-    to = (to or "").strip()
-    if not (user and pwd and to):
-        return False
-    try:
-        msg = EmailMessage()
-        msg["From"] = sender
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg.set_content(body)
-        ctx = ssl.create_default_context()
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, context=ctx, timeout=25) as s:
-                s.login(user, pwd)
-                s.send_message(msg)
-        else:  # 587 / STARTTLS
-            with smtplib.SMTP(host, port, timeout=25) as s:
-                s.starttls(context=ctx)
-                s.login(user, pwd)
-                s.send_message(msg)
-        return True
-    except Exception:
-        return False
-
-
-# Insert a space between adjacent digits so the TTS reads a number one digit at a
-# time (e.g. "+201150472975" is spoken as "plus two zero one ..."). Only affects
-# the spoken audio; the transcript keeps the compact number.
-_DIGIT_GAP = re.compile(r"(?<=\d)(?=\d)")
+# Phone numbers are spoken one digit at a time for a clear read-back
+# ("+201150472975" -> "+2 0 1 1 ..."). Only runs of 7+ digits (optionally split by
+# single spaces, dashes or dots) count as a phone number, so years, prices and
+# stats like "2019", "150+" or "80%" are still read naturally. Only affects the
+# spoken audio; the transcript keeps the compact number.
+_PHONE_RUN = re.compile(r"\+?\d(?:[ .\-]?\d){6,}")
+# A number that may still be growing at the end of a streamed chunk; held back
+# until the next chunk so a phone number split across chunks is spaced as one.
+_NUMBER_TAIL = re.compile(r"\+?\d(?:[ .\-]?\d)*[ .\-]?$")
+_YEAR_RANGE = re.compile(r"(?:19|20)\d\d[ .\-](?:19|20)\d\d")
 _EM_DASH = chr(0x2014)  # em dash, built from its code point so it never appears literally
+
+
+def _space_phone_digits(text: str) -> str:
+    def repl(m: re.Match) -> str:
+        run = m.group()
+        if _YEAR_RANGE.fullmatch(run):  # "2019-2021" is not a phone number
+            return run
+        prefix = "+" if run.startswith("+") else ""
+        return prefix + " ".join(digits_only(run))
+
+    return _PHONE_RUN.sub(repl, text)
 
 
 class IkliAgent(Agent):
     """Agent with output sanitizers so the model's habits never leak through:
 
     - em dashes are never spoken or shown (replaced with a comma),
-    - long digit strings are spoken one digit at a time for a clear phone-number
-      read-back, while the on-screen transcript keeps them as a compact number.
+    - phone numbers are spoken one digit at a time for a clear read-back, while
+      the on-screen transcript keeps them as a compact number.
     """
 
     async def tts_node(self, text, model_settings):
         async def _clean():
+            pending = ""
             async for chunk in text:
-                c = chunk.replace(_EM_DASH, ", ")
-                c = _DIGIT_GAP.sub(" ", c)
-                yield c
+                buf = pending + chunk.replace(_EM_DASH, ", ")
+                tail = _NUMBER_TAIL.search(buf)
+                pending = buf[tail.start():] if tail else ""
+                head = buf[: tail.start()] if tail else buf
+                if head:
+                    yield _space_phone_digits(head)
+            if pending:
+                yield _space_phone_digits(pending)
 
         async for frame in Agent.default.tts_node(self, _clean(), model_settings):
             yield frame
@@ -249,12 +276,13 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
     )
     # Keyterm prompting is a nova-3 (English) feature; only send it on nova-3.
     if dg_model.startswith("nova-3"):
-        stt_kwargs["keyterms"] = KEYTERMS
+        stt_kwargs["keyterm"] = KEYTERMS
     return AgentSession(
         stt=deepgram.STT(**stt_kwargs),
-        llm=google.LLM(              # UNCHANGED per requirement
-            model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite"),  # flash-lite = low TTFT
-            api_key=os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"),
+        llm=ClaudeLLM(
+            model=os.environ.get("LLM_MODEL", "claude-sonnet-5-5"),
+            caching="ephemeral",           # ~7k-token system prompt served from cache each turn
+            api_key=os.environ.get("ANTHROPIC_API_KEY"),
         ),
         tts=elevenlabs.TTS(
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8"),
@@ -275,13 +303,59 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
             api_key=os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"),
         ),
         vad=vad,
-        turn_detection="stt",          # use Deepgram endpointing (fast) instead of heavy EOU model
-        preemptive_generation=True,    # begin the reply before the user fully stops
-        min_endpointing_delay=0.10,    # respond as soon as the user stops
-        max_endpointing_delay=2.0,     # cap the wait for a slow trailing pause
-        min_interruption_duration=0.3,
+        turn_handling={
+            # Deepgram endpointing (fast) instead of the heavy EOU model.
+            "turn_detection": "stt",
+            # Respond as soon as the user stops; cap the wait for a slow trailing pause.
+            "endpointing": {"min_delay": 0.10, "max_delay": 2.0},
+            "interruption": {"min_duration": 0.3},
+            # Begin the reply before the user fully stops. (Preemptive TTS was
+            # measured too: no gain, only wasted TTS characters.)
+            "preemptive_generation": {"enabled": True},
+        },
         aec_warmup_duration=0.5,       # trims ~2.5 s off startup vs the 3 s default
     )
+
+
+# The page opens the room as soon as a visitor interacts with it (mic still off)
+# so a sleeping cloud agent boots while they are still looking at the page; the
+# call itself starts when they press the mic. If they never do, give the slot back
+# (the free LiveKit plan allows only 5 sessions at once).
+PRECONNECT_WAIT_S = float(os.environ.get("PRECONNECT_WAIT_S", "60"))
+
+
+def _has_mic(p: rtc.RemoteParticipant) -> bool:
+    return any(
+        pub.source == rtc.TrackSource.SOURCE_MICROPHONE for pub in p.track_publications.values()
+    )
+
+
+async def _wait_for_mic(room: rtc.Room, p: rtc.RemoteParticipant, timeout: float) -> bool:
+    """True once the caller publishes their mic; False on timeout or if they leave."""
+    if _has_mic(p):
+        return True
+    done = asyncio.get_running_loop().create_future()
+
+    def _published(pub: rtc.RemoteTrackPublication, who: rtc.RemoteParticipant) -> None:
+        if who.identity == p.identity and pub.source == rtc.TrackSource.SOURCE_MICROPHONE:
+            if not done.done():
+                done.set_result(True)
+
+    def _left(who: rtc.RemoteParticipant) -> None:
+        if who.identity == p.identity and not done.done():
+            done.set_result(False)
+
+    room.on("track_published", _published)
+    room.on("participant_disconnected", _left)
+    try:
+        if _has_mic(p):  # published between the first check and subscribing
+            return True
+        return await asyncio.wait_for(done, timeout)
+    except asyncio.TimeoutError:
+        return False
+    finally:
+        room.off("track_published", _published)
+        room.off("participant_disconnected", _left)
 
 
 async def entrypoint(ctx: agents.JobContext):
@@ -311,30 +385,6 @@ async def entrypoint(ctx: agents.JobContext):
             pass
 
     @function_tool
-    async def record_user_name(name: str) -> str:
-        """Save the caller's first name when they tell you it, so we can remember
-        and reuse it. Call this exactly once, as soon as you learn their name."""
-        clean = (name or "").strip()
-        if clean:
-            await _publish({"type": "name", "name": clean})  # frontend persists it
-        return "saved"
-
-    @function_tool
-    async def record_contact(phone: str = "", email: str = "") -> str:
-        """Remember the caller's phone number and/or email when they mention it during
-        the chat, so the export buttons can pre-fill it afterwards. Call this whenever
-        they share contact details, even if they are not booking yet."""
-        p = _digits_only(phone)
-        e = (email or "").strip()
-        if p:
-            state["phone"] = p
-            await _publish({"type": "save", "phone": p})
-        if "@" in e:
-            state["email"] = e
-            await _publish({"type": "save", "email": e})
-        return "saved"
-
-    @function_tool
     async def open_contact_form() -> str:
         """Show the on-screen contact form so the caller can type EITHER their phone
         number (with country code) OR their email, whichever they prefer, while the call
@@ -359,46 +409,52 @@ async def entrypoint(ctx: agents.JobContext):
                 return "invalid_email"
             state["email"] = addr
             await _publish({"type": "save", "email": addr})
-            ok = await asyncio.to_thread(
-                _send_email,
+            ok, _ = await asyncio.to_thread(
+                send_email,
                 addr,
                 "Your Iklipse booking link",
                 f"Hi!\n\nHere's your Iklipse booking link, pick a time that suits you:\n{url}\n\nSee you soon.",
             )
         else:
-            digits = _digits_only(raw)
+            digits = digits_only(raw)
             if len(digits) < 8:
                 return "invalid_number"
             state["phone"] = digits
             await _publish({"type": "save", "phone": digits})
-            ok = await asyncio.to_thread(
-                _send_whatsapp,
+            ok, _ = await asyncio.to_thread(
+                send_whatsapp,
                 digits,
                 f"Hey! Here's your Iklipse booking link, pick a time that suits you: {url}",
             )
         return "sent" if ok else "send_failed"
 
     session = build_session(ctx)
+
+    # One log line per turn with the latency breakdown (end-of-turn wait, Claude
+    # first token, ElevenLabs first audio, and the total the caller feels).
+    @session.on("conversation_item_added")
+    def _log_turn_latency(ev) -> None:
+        m = getattr(ev.item, "metrics", None) or {}
+        keys = ("transcription_delay", "end_of_turn_delay", "llm_node_ttft", "tts_node_ttfb", "e2e_latency")
+        timing = {k: round(m[k], 3) for k in keys if isinstance(m.get(k), (int, float))}
+        if timing:
+            logger.info("turn latency", extra={"role": ev.item.role, **timing})
     await session.start(
         room=ctx.room,
         agent=IkliAgent(
             instructions=instructions_for(known_name),
             tools=[
-                record_user_name,
-                record_contact,
                 open_contact_form,
                 send_booking_link,
             ],
         ),
-        room_input_options=RoomInputOptions(),
     )
 
     # Bridge the browser form back to the agent over the data channel. The frontend
     # publishes {"type":"submit","value":..} when the caller submits (phone or email,
-    # auto-detected), and {"type":"idle"} when the form sits empty and they go quiet.
-    loop = asyncio.get_running_loop()
-
-    async def _on_submitted(value: str) -> None:
+    # auto-detected), {"type":"form_closed"} when they dismiss the form empty, and
+    # {"type":"idle"} / {"type":"idle_end"} when the form sits empty and they go quiet.
+    def _on_submitted(value: str) -> None:
         if "@" in value:  # they entered an email
             state["email"] = value
             session.generate_reply(
@@ -418,42 +474,59 @@ async def entrypoint(ctx: agents.JobContext):
                 )
             )
 
-    async def _on_idle() -> None:
-        session.generate_reply(
-            instructions=(
-                "The caller has gone quiet with the form open. Check in briefly and warmly: "
-                "ask if they're still there and whether they've had a chance to enter it. "
-                "One short sentence."
-            )
-        )
-
-    async def _on_idle_end() -> None:
-        session.generate_reply(
-            instructions=(
-                "The caller has been inactive for a while and hasn't responded. Politely say "
-                "you'll let them go for now since it seems they've stepped away, and to reach "
-                "out any time. Warm, brief, one or two short sentences. This ends the call."
-            )
-        )
+    prompts = {
+        "form_closed": (
+            "The caller closed the contact form without entering anything. Don't push. "
+            "In one short, relaxed line, let them know that's fine and they can also just "
+            "say their number or email out loud if that's easier, or carry on chatting."
+        ),
+        "idle": (
+            "The caller has gone quiet with the form open. Check in briefly and warmly: "
+            "ask if they're still there and whether they've had a chance to enter it. "
+            "One short sentence."
+        ),
+        "idle_end": (
+            "The caller has been inactive for a while and hasn't responded. Politely say "
+            "you'll let them go for now since it seems they've stepped away, and to reach "
+            "out any time. Warm, brief, one or two short sentences. This ends the call."
+        ),
+    }
 
     def _on_data(packet: rtc.DataPacket) -> None:
         try:
             if packet.topic and packet.topic != "ikli":
                 return
             msg = json.loads(bytes(packet.data).decode("utf-8"))
+            t = msg.get("type")
+            if t == "submit":
+                value = str(msg.get("value") or "").strip()[:120]
+                if value:
+                    _on_submitted(value)
+            elif t in prompts:
+                session.generate_reply(instructions=prompts[t])
         except Exception:
             return
-        t = msg.get("type")
-        if t == "submit":
-            value = (msg.get("value") or "").strip()
-            if value:
-                loop.create_task(_on_submitted(value))
-        elif t == "idle":
-            loop.create_task(_on_idle())
-        elif t == "idle_end":
-            loop.create_task(_on_idle_end())
 
     ctx.room.on("data_received", _on_data)
+
+    @session.on("user_input_transcribed")
+    def _capture_contact(ev) -> None:
+        if not ev.is_final:
+            return
+        phone, email = _contacts_in(ev.transcript or "")
+        if phone and phone != state["phone"]:
+            state["phone"] = phone
+            asyncio.ensure_future(_publish({"type": "save", "phone": phone}))
+        if email and email != state["email"]:
+            state["email"] = email
+            asyncio.ensure_future(_publish({"type": "save", "email": email}))
+
+    # The session above is already live (audio track published, models connected),
+    # so once the caller presses the mic the greeting plays with no setup delay.
+    if not await _wait_for_mic(ctx.room, participant, PRECONNECT_WAIT_S):
+        logger.info("caller never started the call; releasing the session")
+        ctx.shutdown(reason="caller never pressed the mic")
+        return
 
     # Speak first, instantly.
     greeting_pcm = ctx.proc.userdata.get("greeting_pcm")

@@ -12,8 +12,7 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY knowledge.py .
-COPY agent.py .
+COPY knowledge.py messaging.py agent.py ./
 
 # Pre-download model files (Silero VAD, etc.) into the image so cold start is fast.
 RUN python agent.py download-files

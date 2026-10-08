@@ -3,6 +3,6 @@
 # (The heavy agent deps live in backend/requirements.txt and run on the agent host.)
 fastapi
 livekit-api>=1.0
-google-genai
+anthropic>=1.12
 requests
 python-dotenv

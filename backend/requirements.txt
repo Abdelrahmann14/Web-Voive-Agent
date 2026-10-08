@@ -1,6 +1,10 @@
-# LiveKit Agents + plugins (Deepgram STT, ElevenLabs TTS, Google Gemini LLM, Silero VAD)
-livekit-agents[deepgram,elevenlabs,google,silero]>=1.6,<2
+# LiveKit Agents + plugins (Deepgram STT, ElevenLabs TTS, Claude LLM, Silero VAD)
+livekit-agents[anthropic,deepgram,elevenlabs,silero]==1.8.1  # version verified live on LiveKit Cloud
 livekit-api>=1.2,<2
+# Imported directly by agent.py / server.py / messaging.py
+anthropic>=1.12,<2
+numpy
+requests
 
 # Token / API server
 fastapi>=0.115.0

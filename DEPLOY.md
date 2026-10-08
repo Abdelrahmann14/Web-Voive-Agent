@@ -10,7 +10,7 @@ LiveKit         ->  LiveKit Cloud      (already set up)
 ```
 
 For **lowest latency**, put the agent in a US region (next to Deepgram /
-ElevenLabs / Gemini) and set your LiveKit Cloud project region to match your
+ElevenLabs / Anthropic) and set your LiveKit Cloud project region to match your
 users. LiveKit Cloud Agents runs the agent inside LiveKit's own datacenter —
 the best option.
 
@@ -36,7 +36,7 @@ Set these **Environment Variables** in the Vercel dashboard (Project → Setting
 | Var | Purpose |
 |-----|---------|
 | `LIVEKIT_URL` `LIVEKIT_API_KEY` `LIVEKIT_API_SECRET` | mint join tokens |
-| `GOOGLE_API_KEY` `GEMINI_MODEL` | call summary |
+| `ANTHROPIC_API_KEY` `LLM_MODEL` | call summary (Claude) |
 | `GREENAPI_HOST` `GREENAPI_ID` `GREENAPI_TOKEN` | WhatsApp export |
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | email export |
 
@@ -62,7 +62,7 @@ Set the agent's **secrets** in the LiveKit Cloud dashboard (or `lk agent` env):
 | `LIVEKIT_URL` `LIVEKIT_API_KEY` `LIVEKIT_API_SECRET` | connect to LiveKit |
 | `DEEPGRAM_API_KEY` `DEEPGRAM_MODEL` | STT (nova-3) |
 | `ELEVEN_API_KEY` `ELEVEN_VOICE_ID` `ELEVEN_MODEL` | TTS (Flash v2.5) |
-| `GOOGLE_API_KEY` `GEMINI_MODEL` | LLM |
+| `ANTHROPIC_API_KEY` `LLM_MODEL` `LLM_EFFORT` | LLM (Claude Sonnet 5.5, effort low) |
 
 Redeploy after changes: `lk agent deploy`.
 
@@ -95,3 +95,14 @@ npm run dev
 - `agent.py start` runs jobs in-thread (no per-call process spawn).
 - Hosting the agent on fast CPU near the providers is the single biggest win —
   a local PC caps you around 3–4 s; a good US host gets ~1–1.5 s first-speak.
+
+## Cold starts (free LiveKit "Build" plan)
+On the Build plan LiveKit shuts the cloud agent down after calls end and boots it
+again on the next call, which can add 10-20 s before the agent joins. The page
+hides this: on a visitor's first interaction (mouse move, tap, scroll, key) it
+opens the room with the mic OFF, which wakes the agent; the agent starts its
+session and waits silently, and greets ~0.6 s after the mic is pressed. If the
+mic is never pressed it leaves after `PRECONNECT_WAIT_S` (default 60 s).
+Trade-off: a visitor sitting on the page holds one of the Build plan's 5
+concurrent agent sessions for up to a minute. A paid plan keeps agents warm and
+removes the need for this.

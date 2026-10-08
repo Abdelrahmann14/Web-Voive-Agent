@@ -7,7 +7,7 @@ about Iklipse. Everything here is distilled from the company's own website
 naturally (never read it out like a document), and never invent facts, services,
 prices, or results that are not written here.
 
-Kept as plain strings so the LLM (Google Gemini, unchanged) can use it directly
+Kept as plain strings so the LLM (Claude) can use it directly
 as system context. Written for VOICE: no markdown is ever spoken; the headings
 below are just for the model's own reference.
 """
@@ -96,9 +96,7 @@ BOOKING = (
     "When prompted to check in, say ONE short friendly line only ('Still there?' / 'Take your "
     "time, no rush'). When prompted that it's ending for inactivity, give a brief, warm sign-off "
     "in a sentence or two. Never lecture or repeat yourself across these.\n"
-    "REMEMBERING CONTACT DETAILS. Any time the caller mentions their phone number or email during "
-    "the chat, even if they're not booking, quietly call record_contact with it so it's saved for "
-    "later. Never invent or guess a number or email. Only send to one they gave and confirmed."
+    "Never invent or guess a number or email. Only send to one they gave and confirmed."
 )
 
 # --- The knowledge base -------------------------------------------------------
@@ -319,7 +317,7 @@ def full_instructions(name: str | None) -> str:
     else:
         parts.append(
             "You don't know the caller's name yet; your greeting already asked. Whenever they "
-            "share it, quietly call the record_user_name tool once with their first name, then "
-            "use it lightly here and there. If they'd rather not say, let it go, don't push."
+            "share it, use it lightly here and there. If they'd rather not say, let it go, "
+            "don't push."
         )
     return "\n\n".join(parts)

@@ -796,6 +796,7 @@
                 style="color:white;font-size:32px" aria-hidden="true">mic</span>
         </button>
         <p style="font-size:14px;color:#71717A;font-weight:400;letter-spacing:0.05em;opacity:0.8;font-family: 'Excon', sans-serif;">Press to Connect</p>
+        <p id="connect-error" role="alert" style="display:none;max-width:320px;padding:0 16px;text-align:center;font-size:13px;line-height:1.5;color:#ff4c39;font-weight:600"></p>
       </div>
     </div>
   </div>
@@ -812,48 +813,12 @@
       </div>
 
       <!-- chat bubbles -->
-      <div id="bubbles-container">
-        <div class="bubble agent" style="
-          align-self:flex-start;max-width:85%;
-          background:rgba(255,255,255,0.04);
-          border:1px solid rgba(255,255,255,0.06);
-          border-radius:24px 24px 24px 4px;
-          padding:20px 24px;
-          animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards">
-          <p style="font-size:15px;line-height:1.6">
-            Hi! I'm Ikli, Iklipse's AI assistant. My systems are live and ready to assist you.
-          </p>
-        </div>
-
-        <div class="bubble user" style="
-          align-self:flex-end;max-width:80%;
-          background:rgba(99,102,241,0.05);
-          border:1px solid rgba(99,102,241,0.1);
-          border-radius:24px 24px 4px 24px;
-          padding:20px 24px;
-          animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s both">
-          <p style="font-size:15px;line-height:1.6">
-            Show me what Iklipse is capable of.
-          </p>
-        </div>
-
-        <div class="bubble agent" style="
-          align-self:flex-start;max-width:85%;
-          background:rgba(255,255,255,0.04);
-          border:1px solid rgba(255,255,255,0.06);
-          border-radius:24px 24px 24px 4px;
-          padding:20px 24px;
-          animation:fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both">
-          <p style="font-size:15px;line-height:1.6">
-            We specialize in advanced AI deployment, from real-time voice agents to complex automation workflows. Should we discuss a specific use case?
-          </p>
-        </div>
-      </div>
+      <div id="bubbles-container" aria-live="polite"></div>
 
       <!-- speaking status + mic -->
       <div class="controls-container">
         <p id="speaking-status" style="font-size:14px;color:#ff4c39;font-weight:600;
-           letter-spacing:0.2em;text-transform:uppercase;font-family:'Excon', sans-serif">Speaking</p>
+           letter-spacing:0.2em;text-transform:uppercase;font-family:'Excon', sans-serif">Connecting</p>
         <button onclick="endCall()" data-tooltip="End current session" aria-label="End session" style="
           width:80px;height:80px;border-radius:50%;
           border:1px solid rgba(255,76,57,0.3);
@@ -863,7 +828,7 @@
           box-shadow:0 0 50px rgba(255,76,57,0.1);
           transition:all 0.4s ease;">
           <span class="material-symbols-outlined" 
-                style="color:#ff4c39;font-size:32px" aria-hidden="true">mic</span>
+                style="color:#ff4c39;font-size:32px" aria-hidden="true">call_end</span>
         </button>
       </div>
     </div>
@@ -909,9 +874,7 @@
             <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">subject</span>
             <span style="font-weight:600;font-size:14px">Transcription</span>
           </div>
-          <p id="final-transcription" style="font-size:13px;color:#A1A1AA;line-height:1.6;max-height:100px;overflow-y:auto;padding-right:8px;font-weight:400">
-            "We discussed the integration of voice agents into specialized enterprise workflows, focusing on low-latency response times and multi-modal interaction capabilities..."
-          </p>
+          <p id="final-transcription" style="font-size:13px;color:#A1A1AA;line-height:1.6;max-height:100px;overflow-y:auto;padding-right:8px;font-weight:400"></p>
         </div>
 
         <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
@@ -922,9 +885,7 @@
             <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">auto_awesome</span>
             <span style="font-weight:600;font-size:14px">Summary</span>
           </div>
-          <p id="final-summary" style="font-size:13px;color:#A1A1AA;font-style:italic;line-height:1.6;font-weight:400">
-            The session explored technical deployment strategies for AI agents, identifying key performance indicators for voice-based customer support scaling.
-          </p>
+          <p id="final-summary" style="font-size:13px;color:#A1A1AA;font-style:italic;line-height:1.6;font-weight:400"></p>
         </div>
       </div>
 
@@ -943,7 +904,7 @@
         <!-- Dynamic Inputs -->
         <div id="export-input-area" style="display:none;width:100%">
           <div id="export-input-pill" style="display:flex;align-items:center;padding:6px 6px 6px 20px;border-radius:20px;width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14)">
-            <input id="export-field" type="text" placeholder="" style="flex:1;background:transparent;border:none;color:inherit;font-family:inherit;outline:none;font-size:14px">
+            <input id="export-field" type="text" placeholder="" aria-label="Phone number or email" onkeydown="if(event.key==='Enter'){submitExport();}" style="flex:1;background:transparent;border:none;color:inherit;font-family:inherit;outline:none;font-size:14px">
             <button onclick="submitExport()" style="background:#ff4c39;border:none;padding:12px 24px;border-radius:14px;color:white;font-weight:700;cursor:pointer;font-family:inherit">Send</button>
           </div>
           <button onclick="resetExportOptions()" style="margin-top:16px;background:transparent;border:none;color:#71717A;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">← Back to options</button>
@@ -1155,6 +1116,8 @@
     }
 
     function startCall() {
+      if (appState === 'active') return;
+      document.getElementById('connect-error').style.display = 'none';
       appState = 'active';
       targetIntensity = 0.6;
       targetState = 1.0;
@@ -1179,6 +1142,30 @@
       if (window.__voiceConnect) window.__voiceConnect();
     }
 
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // Voice link failed to start (mic blocked, server down, agent offline):
+    // return to the start screen with the reason instead of a silent dead call.
+    window.__onVoiceFailed = function (message) {
+      if (appState !== 'active') return;
+      clearInterval(timerInterval);
+      window.__closeCollectFormUI();
+      document.getElementById('confirmation-modal').style.display = 'none';
+      document.getElementById('screen-active').style.display = 'none';
+      resetCall();
+      const err = document.getElementById('connect-error');
+      err.textContent = message || 'Voice connection failed.';
+      err.style.display = 'block';
+    };
+
+    // The line dropped mid-call (network / server). Finish the session normally
+    // so the caller still gets their report.
+    window.__onVoiceDropped = function () {
+      if (appState === 'active') confirmEndSession();
+    };
+
     function endCall() {
       // Show confirmation dialog instead of ending immediately
       document.getElementById('confirmation-modal').style.display = 'flex';
@@ -1190,6 +1177,8 @@
 
     function confirmEndSession() {
       document.getElementById('confirmation-modal').style.display = 'none';
+      if (appState !== 'active') return;
+      window.__closeCollectFormUI();
       if (window.__voiceDisconnect) window.__voiceDisconnect();
       appState = 'ended';
       targetIntensity = 0.08;
@@ -1237,10 +1226,10 @@
 
       // Render the real conversation.
       transcriptEl.innerHTML = turns
-        .map(t => `<strong style="color:#ff4c39">${t.role}:</strong> ${t.text}`)
+        .map(t => `<strong style="color:#ff4c39">${escapeHtml(t.role)}:</strong> ${escapeHtml(t.text)}`)
         .join('<br><br>');
 
-      // Ask the backend (server-side Gemini) for a real summary, then reveal.
+      // Ask the backend (server-side Claude) for a real summary, then reveal.
       const plain = turns.map(t => `${t.role}: ${t.text}`).join('\n');
       fetch('/summarize', {
         method: 'POST',
@@ -1281,6 +1270,7 @@
     }
 
     function resetExportOptions() {
+      document.getElementById('export-success').style.display = 'none';
       document.getElementById('export-input-area').style.display = 'none';
       document.getElementById('export-options').style.display = 'flex';
     }
@@ -1319,8 +1309,7 @@
         try { window.__collectIdleEnd && window.__collectIdleEnd(); } catch (e) {}
         // Let the goodbye play, then end the call.
         setTimeout(() => {
-          window.__closeCollectFormUI();
-          if (typeof confirmEndSession === 'function') confirmEndSession();
+          if (appState === 'active') confirmEndSession();
         }, 6000);
       } else if (!__collectFired.n2 && idleMs >= 10000) {
         __collectFired.n2 = true;
@@ -1340,7 +1329,11 @@
     // The caller did something -> reset the inactivity clock.
     window.__collectActivity = function () { if (__collectModalOpen()) __collectResetActivity(); };
     // Track whether the agent is currently speaking, so we never talk over it.
-    window.__setAgentSpeaking = function (v) { __collectAgentSpeaking = !!v; };
+    window.__setAgentSpeaking = function (v) {
+      const wasSpeaking = __collectAgentSpeaking;
+      __collectAgentSpeaking = !!v;
+      if (wasSpeaking && !v) window.__collectActivity();
+    };
 
     // Agent opened the booking form. One generic form takes a phone number OR an
     // email; the type is auto-detected on submit.
@@ -1369,7 +1362,10 @@
       __collectStopWatch();
     };
 
-    function closeCollectForm() { window.__closeCollectFormUI(); }
+    function closeCollectForm() {
+      window.__closeCollectFormUI();
+      try { window.__collectClosed && window.__collectClosed(); } catch (e) {}
+    }
 
     function submitCollectForm() {
       const f = document.getElementById('collect-field');
@@ -1393,86 +1389,55 @@
       const inputArea = document.getElementById('export-input-area');
       const successMsg = document.getElementById('export-success');
       const sendBtn = inputArea.querySelector('button');
+      const value = field.value.trim();
+      if (!value || sendBtn.disabled) return;
 
-      if (!field.value) return;
+      // WhatsApp via GREEN-API, email via SMTP app password (both on the backend).
+      const isWhatsApp = currentExportMethod === 'whatsapp';
+      const endpoint = isWhatsApp ? '/export/whatsapp' : '/export/email';
+      const body = isWhatsApp
+        ? { phone: value, message: buildReportMessage() }
+        : { email: value, message: buildReportMessage() };
 
-      if (currentExportMethod === 'whatsapp') {
-        const original = sendBtn.textContent;
-        sendBtn.textContent = 'Sending…';
-        sendBtn.disabled = true;
-        try {
-          const res = await fetch('/export/whatsapp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: field.value, message: buildReportMessage() }),
-          });
-          const data = await res.json();
-          inputArea.style.display = 'none';
-          if (data.ok) {
-            successMsg.style.color = '#22C55E';
-            successMsg.textContent = 'Sent to WhatsApp successfully';
-          } else {
-            successMsg.style.color = '#ff4c39';
-            successMsg.textContent = data.error || 'Failed to send.';
-          }
-          successMsg.style.display = 'block';
-        } catch (e) {
-          inputArea.style.display = 'none';
-          successMsg.style.color = '#ff4c39';
-          successMsg.textContent = 'Backend not reachable.';
-          successMsg.style.display = 'block';
-        } finally {
-          sendBtn.textContent = original;
-          sendBtn.disabled = false;
-        }
-        setTimeout(() => {
-          if (appState === 'ended') {
-            successMsg.style.display = 'none';
-            successMsg.style.color = '#ff4c39';
-            document.getElementById('export-options').style.display = 'flex';
-          }
-        }, 5000);
+      const original = sendBtn.textContent;
+      sendBtn.textContent = 'Sending…';
+      sendBtn.disabled = true;
+      let ok = false;
+      let error = '';
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        ok = !!data.ok;
+        error = data.error || 'Failed to send.';
+      } catch (e) {
+        error = 'Backend not reachable.';
+      } finally {
+        sendBtn.textContent = original;
+        sendBtn.disabled = false;
+      }
+
+      if (!ok) {
+        // Keep the field (and what they typed) so they can fix it and retry.
+        successMsg.style.color = '#ff4c39';
+        successMsg.textContent = error;
+        successMsg.style.display = 'block';
         return;
       }
-
-      // Email path (SMTP app password on the backend)
-      {
-        const original = sendBtn.textContent;
-        sendBtn.textContent = 'Sending…';
-        sendBtn.disabled = true;
-        try {
-          const res = await fetch('/export/email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: field.value, message: buildReportMessage() }),
-          });
-          const data = await res.json();
-          inputArea.style.display = 'none';
-          if (data.ok) {
-            successMsg.style.color = '#22C55E';
-            successMsg.textContent = 'Sent to your email successfully';
-          } else {
-            successMsg.style.color = '#ff4c39';
-            successMsg.textContent = data.error || 'Failed to send.';
-          }
-          successMsg.style.display = 'block';
-        } catch (e) {
-          inputArea.style.display = 'none';
+      inputArea.style.display = 'none';
+      successMsg.style.color = '#22C55E';
+      successMsg.textContent = isWhatsApp ? 'Sent to WhatsApp successfully' : 'Sent to your email successfully';
+      successMsg.style.display = 'block';
+      setTimeout(() => {
+        if (appState === 'ended') {
+          successMsg.style.display = 'none';
           successMsg.style.color = '#ff4c39';
-          successMsg.textContent = 'Backend not reachable.';
-          successMsg.style.display = 'block';
-        } finally {
-          sendBtn.textContent = original;
-          sendBtn.disabled = false;
+          document.getElementById('export-options').style.display = 'flex';
         }
-        setTimeout(() => {
-          if (appState === 'ended') {
-            successMsg.style.display = 'none';
-            successMsg.style.color = '#ff4c39';
-            document.getElementById('export-options').style.display = 'flex';
-          }
-        }, 5000);
-      }
+      }, 5000);
     }
 
     function resetCall() {
@@ -1486,6 +1451,8 @@
       
       document.getElementById('screen-ended').style.display = 'none';
       document.getElementById('screen-idle').style.display = 'flex';
+      // Wake the agent again on the next interaction so the next call starts fast.
+      if (window.__voicePrepare) window.__voicePrepare();
     }
 
     function toggleTheme() {
@@ -1591,7 +1558,7 @@
     });
   </script>
 
-  <!-- LiveKit voice agent integration (Deepgram STT / Gemini LLM / ElevenLabs TTS) -->
+  <!-- LiveKit voice agent integration (Deepgram STT / Claude LLM / ElevenLabs TTS) -->
   <script type="module" src="/src/voice-agent.ts"></script>
 </body>
 </html>
