@@ -646,6 +646,8 @@ async function connect() {
   await r.localParticipant.setMicrophoneEnabled(true);
   await r.startAudio().catch(() => {});
   if (cancelled()) return;
+  __publishToAgent({ type: 'client', device: deviceKind() });
+  if (document.hidden) __publishToAgent({ type: 'visibility', hidden: true });
 
   setStatus(agentPresent(r) ? 'Connected' : 'Connecting');
 }
@@ -685,7 +687,9 @@ declare global {
     __submitCollect?: (value: string) => void;
     __collectIdleSignal?: () => void;
     __collectIdleEnd?: () => void;
-    __collectClosed?: () => void;
+    __collectClosed?: (draft?: string) => void;
+    // Mirror something on the caller's screen to the agent (only during a live call).
+    __ikliSend?: (msg: Record<string, unknown>) => void;
     // Call lifecycle callbacks implemented in index.html.
     __onVoiceFailed?: (message: string) => void;
     __onVoiceDropped?: () => void;
@@ -729,6 +733,21 @@ function __publishToAgent(obj: any) {
   room.localParticipant.publishData(bytes, { reliable: true, topic: 'ikli' }).catch(() => {});
 }
 
+// The agent "sees" the caller's screen: index.html mirrors the booking form and
+// orb pokes through this, and the tab going to the background is sent from here.
+window.__ikliSend = (msg) => {
+  if (room && live) __publishToAgent(msg);
+};
+
+document.addEventListener('visibilitychange', () => {
+  window.__ikliSend?.({ type: 'visibility', hidden: document.hidden });
+});
+
+function deviceKind(): 'phone' | 'tablet' | 'computer' {
+  if (!window.matchMedia('(pointer: coarse)').matches) return 'computer';
+  return Math.min(screen.width, screen.height) >= 600 ? 'tablet' : 'phone';
+}
+
 // Caller submitted the form (phone OR email) -> tell the agent and remember it
 // for the export pre-fill. Type is auto-detected by looking for an '@'.
 window.__submitCollect = (value: string) => {
@@ -748,9 +767,10 @@ window.__collectIdleEnd = () => {
   __publishToAgent({ type: 'idle_end' });
 };
 
-// Caller dismissed the form without submitting -> let the agent react instead of waiting.
-window.__collectClosed = () => {
-  __publishToAgent({ type: 'form_closed' });
+// Caller dismissed the form without submitting -> let the agent react instead of
+// waiting. Whatever they had typed is passed along (it's kept as a draft).
+window.__collectClosed = (draft?: string) => {
+  __publishToAgent({ type: 'form_closed', value: (draft || '').slice(0, 120) });
 };
 
 window.__getTranscript = () => getTranscript();

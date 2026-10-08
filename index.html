@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -175.6 655.23 655.23'%3E%3Cpath fill='%23ff4c39' d='M503.23,0c83.88-.01,153.1,70.16,151.99,154.03-1.1,83-68.72,149.95-151.97,149.95-54.51,0-102.32-28.7-129.14-71.81-10.03-16.13-27.49-26.14-46.49-26.14h0c-18.7,0-36.26,9.5-46.05,25.44-27.24,44.32-76.59,73.6-132.69,72.48C68.39,302.34.65,233.72,0,153.23-.67,68.72,67.64,0,151.99,0c54.51,0,102.32,28.7,129.14,71.81,10.03,16.13,27.49,26.14,46.49,26.14h0c18.7,0,36.26-9.5,46.05-25.43C400.4,29.02,448.43,0,503.23,0Z'/%3E%3C/svg%3E">
   <title>iklipse | Cast your shadow</title>
   <script>
     // Apply the saved theme before first paint so there is no flash.
@@ -186,6 +187,8 @@
     }
     /* On the report the orb steps back so the text stays readable. */
     body.is-ended #orb-canvas { opacity: .28; }
+    /* The orb can be poked (it reacts, and in a call Ikli says something). */
+    #orb-canvas.orb-hover { cursor: pointer; }
 
     /* UI layers sit above the canvas; only real controls take the pointer. */
     .ui-layer {
@@ -231,11 +234,11 @@
     }
     .float-logo:hover { transform: translateY(-2px); opacity: .85; }
     .logo-shape {
-      width: 52px;
-      height: 24px;
+      width: 54px;
+      height: 25px;
       background: var(--accent);
-      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 24'%3E%3Cpath d='M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24ZM32 24C38.6274 24 44 18.6274 44 12C44 5.37258 38.6274 0 32 0C25.3726 0 20 5.37258 20 12C20 18.6274 25.3726 24 32 24Z'/%3E%3C/svg%3E");
-      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 24'%3E%3Cpath d='M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24ZM32 24C38.6274 24 44 18.6274 44 12C44 5.37258 38.6274 0 32 0C25.3726 0 20 5.37258 20 12C20 18.6274 25.3726 24 32 24Z'/%3E%3C/svg%3E");
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 655.23 303.98'%3E%3Cpath d='M503.23,0c83.88-.01,153.1,70.16,151.99,154.03-1.1,83-68.72,149.95-151.97,149.95-54.51,0-102.32-28.7-129.14-71.81-10.03-16.13-27.49-26.14-46.49-26.14h0c-18.7,0-36.26,9.5-46.05,25.44-27.24,44.32-76.59,73.6-132.69,72.48C68.39,302.34.65,233.72,0,153.23-.67,68.72,67.64,0,151.99,0c54.51,0,102.32,28.7,129.14,71.81,10.03,16.13,27.49,26.14,46.49,26.14h0c18.7,0,36.26-9.5,46.05-25.43C400.4,29.02,448.43,0,503.23,0Z'/%3E%3C/svg%3E");
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 655.23 303.98'%3E%3Cpath d='M503.23,0c83.88-.01,153.1,70.16,151.99,154.03-1.1,83-68.72,149.95-151.97,149.95-54.51,0-102.32-28.7-129.14-71.81-10.03-16.13-27.49-26.14-46.49-26.14h0c-18.7,0-36.26,9.5-46.05,25.44-27.24,44.32-76.59,73.6-132.69,72.48C68.39,302.34.65,233.72,0,153.23-.67,68.72,67.64,0,151.99,0c54.51,0,102.32,28.7,129.14,71.81,10.03,16.13,27.49,26.14,46.49,26.14h0c18.7,0,36.26-9.5,46.05-25.43C400.4,29.02,448.43,0,503.23,0Z'/%3E%3C/svg%3E");
       -webkit-mask-size: contain;
       mask-size: contain;
       -webkit-mask-repeat: no-repeat;
@@ -768,6 +771,13 @@
     .modal.open .modal-card { animation: cardIn .45s var(--ease-spring) both; }
     @keyframes scrimIn { from { opacity: 0; } }
     @keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+    /* Asked to open a form that's already open: a small shake points at it. */
+    .modal-card.nudge { animation: cardNudge .5s var(--ease) both; }
+    @keyframes cardNudge {
+      20% { transform: translateX(-7px); }
+      45% { transform: translateX(6px); }
+      70% { transform: translateX(-3px); }
+    }
     .modal-icon {
       width: 62px;
       height: 62px;
@@ -887,7 +897,7 @@
     @media (max-width: 480px) {
       #theme-toggle { width: 42px; height: 42px; }
       .float-logo { height: 42px; }
-      .logo-shape { width: 46px; height: 21px; }
+      .logo-shape { width: 47px; height: 22px; }
       .bubble { max-width: 90%; padding: 12px 15px; }
       .bubble p { font-size: 14.5px; }
       .end-btn { width: 66px; height: 66px; }
@@ -972,11 +982,11 @@
     <div class="modal-card">
       <div class="modal-icon"><span id="collect-icon" class="material-symbols-outlined" aria-hidden="true">alternate_email</span></div>
       <div>
-        <h3 id="collect-title">Where should we send it?</h3>
-        <p id="collect-hint">Enter your phone number, including your country code, or your email address.</p>
+        <h3 id="collect-title">Book a call with the team</h3>
+        <p id="collect-hint">Type your WhatsApp number (with country code) or your email. We'll send you a link to pick a time for a free 30-minute Zoom call.</p>
       </div>
       <div id="collect-input-pill" class="input-pill">
-        <input id="collect-field" type="text" inputmode="text" autocomplete="on" placeholder="Phone number or email" aria-label="Phone number or email"
+        <input id="collect-field" type="text" inputmode="text" autocomplete="on" placeholder="WhatsApp number or email" aria-label="WhatsApp number or email"
           onkeydown="if(event.key==='Enter'){submitCollectForm();}">
       </div>
       <div class="modal-actions">
@@ -1258,6 +1268,10 @@
     let targetTheme = material.uniforms.uTheme.value;
     let voiceEnv = 0;      // smoothed loudness of the agent's voice
     let kick = 0;          // decaying beat added on every word
+    // Poke reaction: the orb is shoved away from the finger, squeezes and springs
+    // back with a little wobble (world units / scale fraction), plus a brief flare.
+    const poke = { x: 0, y: 0, vx: 0, vy: 0, s: 0, vs: 0, spin: 0, flash: 0 };
+    let orbBaseX = 0.0;
     let timerInterval = null;
     let seconds = 0;
 
@@ -1312,6 +1326,7 @@
     }
     layoutOrb();
     baseScale = targetScale;
+    orbBaseX = targetX;
     orbBaseY = targetY;
     orb.position.set(targetX, targetY, 0);
 
@@ -1325,6 +1340,41 @@
         r: (ORB_R * orb.scale.x) / worldPerPx(),
       };
     };
+
+    // ---- Poking the orb ----------------------------------------------------
+    // A click / tap on the orb shoves it away from the finger; it springs back.
+    // In a call the agent hears about it too (bursts of taps are sent as one).
+    const pokeNDC = new THREE.Vector2();
+    let pokeBurst = 0;
+    let pokeTimer = 0;
+    function pokeOrb(px, py) {
+      const o = window.__orbScreen();
+      let dx = o.x - px;
+      let dy = o.y - py;
+      const d = Math.hypot(dx, dy) || 1;
+      dx /= d;
+      dy /= d;
+      const rWorld = ORB_R * orb.scale.x;
+      const m = reduceMotionMQ.matches ? 0.25 : 1;
+      const cap = rWorld * 3;
+      poke.vx = THREE.MathUtils.clamp(poke.vx + dx * rWorld * 1.5 * m, -cap, cap);
+      poke.vy = THREE.MathUtils.clamp(poke.vy - dy * rWorld * 1.5 * m, -cap, cap);
+      poke.vs = Math.max(-4, poke.vs - 1.7 * m);
+      poke.spin = Math.min(2.5, poke.spin + (dx >= 0 ? 0.9 : -0.9) * m);
+      poke.flash = 1;
+      if (appState !== 'active') return;
+      pokeBurst++;
+      clearTimeout(pokeTimer);
+      pokeTimer = setTimeout(() => {
+        if (appState === 'active') window.__ikliSend?.({ type: 'poke', n: pokeBurst });
+        pokeBurst = 0;
+      }, 350);
+    }
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      pokeNDC.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(pokeNDC, camera);
+      if (raycaster.intersectObject(orb).length) pokeOrb(e.clientX, e.clientY);
+    });
 
     // ---- Screens & modals ------------------------------------------------
     const SCREENS = ['screen-idle', 'screen-active', 'screen-ended'];
@@ -1360,6 +1410,7 @@
       if (appState === 'active') return;
       document.getElementById('connect-error').style.display = 'none';
       appState = 'active';
+      __collectDraft = '';
       targetIntensity = 0.6;
       targetState = 1.0;
       targetRotSpeed = 0.012;
@@ -1572,45 +1623,75 @@
       if (wasSpeaking && !v) window.__collectActivity();
     };
 
+    // The agent sees what the caller sees: the form being shown, what's typed
+    // (throttled), focus, and closing are all mirrored to it (see src/voice-agent.ts).
+    let __collectDraft = '';          // kept when the form is closed without sending
+    let __fieldSentAt = 0;
+    let __fieldTimer = 0;
+    function __collectField() { return document.getElementById('collect-field'); }
+    function __sendFieldState() {
+      clearTimeout(__fieldTimer);
+      __fieldSentAt = Date.now();
+      window.__ikliSend?.({ type: 'form_input', value: __collectField().value.slice(0, 120) });
+    }
+    function __onFieldInput() {
+      window.__collectActivity();
+      const since = Date.now() - __fieldSentAt;
+      clearTimeout(__fieldTimer);
+      if (since > 800) __sendFieldState();
+      else __fieldTimer = setTimeout(__sendFieldState, 800 - since);
+    }
+
     // Agent opened the booking form. One generic form takes a phone number OR an
     // email; the type is auto-detected on submit.
     window.__openCollectForm = function () {
       const m = document.getElementById('collect-modal');
-      const f = document.getElementById('collect-field');
+      const f = __collectField();
       if (!m || !f) return;
-      f.value = '';
-      // Pre-fill with a contact given earlier THIS session (in-memory only, phone first).
-      if (window.__ikliPhone) f.value = window.__ikliPhone;
-      else if (window.__ikliEmail) f.value = window.__ikliEmail;
+      if (__collectModalOpen()) {               // asked again while it's up: point at it
+        replayClass(m.querySelector('.modal-card'), 'nudge');
+        return;
+      }
+      // Bring back their unsent draft, else a contact given earlier THIS session
+      // (in-memory only, phone first).
+      f.value = __collectDraft || window.__ikliPhone || window.__ikliEmail || '';
+      m.querySelector('.modal-card').classList.remove('nudge');
       openModal('collect-modal');
       // Do NOT auto-focus: popping the mobile keyboard here triggers a viewport
       // resize (and a WebGL buffer realloc) that stutters the agent's speech. The
       // field is tappable, so the caller focuses it when ready.
-      f.oninput = window.__collectActivity;
-      f.onfocus = window.__collectActivity;
+      f.oninput = __onFieldInput;
+      f.onfocus = () => { window.__collectActivity(); window.__ikliSend?.({ type: 'form_focus', focused: true }); };
+      f.onblur = () => window.__ikliSend?.({ type: 'form_focus', focused: false });
       f.onclick = window.__collectActivity;
       __collectStartWatch();
+      window.__ikliSend?.({ type: 'form_shown', value: f.value.slice(0, 120) });
     };
 
-    // Agent closed the form (or we're moving on / ending).
+    // Agent closed the form (or we're moving on / ending). Whatever was typed stays
+    // as a draft for the next time it opens.
     window.__closeCollectFormUI = function () {
       const m = document.getElementById('collect-modal');
+      const f = __collectField();
+      if (m && __collectModalOpen() && f) __collectDraft = f.value.trim();
+      clearTimeout(__fieldTimer);
       if (m) m.style.display = 'none';
       __collectStopWatch();
     };
 
     function closeCollectForm() {
       window.__closeCollectFormUI();
-      try { window.__collectClosed && window.__collectClosed(); } catch (e) {}
+      try { window.__collectClosed && window.__collectClosed(__collectDraft); } catch (e) {}
     }
 
     function submitCollectForm() {
-      const f = document.getElementById('collect-field');
+      const f = __collectField();
       const val = (f && f.value || '').trim();
       if (!val) { if (f) f.focus(); return; }
       __collectStopWatch();
       try { window.__submitCollect && window.__submitCollect(val); } catch (e) {}
       window.__closeCollectFormUI();
+      __collectDraft = '';
     }
 
     function buildReportMessage() {
@@ -1759,36 +1840,48 @@
 
       u.uTime.value = elapsed;
       intensityBase = lerp(intensityBase, targetIntensity, kf(0.04));
-      u.uIntensity.value = intensityBase + beat * 0.12;
+      u.uIntensity.value = intensityBase + beat * 0.12 + poke.flash * 0.18;
       u.uState.value = lerp(u.uState.value, targetState, kf(0.04));
       u.uSentiment.value = lerp(u.uSentiment.value, targetSentiment, kf(0.02));
       u.uTheme.value = lerp(u.uTheme.value, targetTheme, kf(0.12));
 
       // Hover (mouse only)
       raycaster.setFromCamera(mouseVector, camera);
-      isHoveringOrb = raycaster.intersectObject(orb).length > 0;
+      const hovering = raycaster.intersectObject(orb).length > 0;
+      if (hovering !== isHoveringOrb) renderer.domElement.classList.toggle('orb-hover', hovering);
+      isHoveringOrb = hovering;
       hoverScaleFactor = lerp(hoverScaleFactor, isHoveringOrb ? 1.08 : 1.0, kf(0.08));
       hoverGlowFactor = lerp(hoverGlowFactor, isHoveringOrb ? 2.5 : 1.0, kf(0.08));
 
       // Mouse-responsive rotation
       mouseX = lerp(mouseX, targetOrbMouseX, kf(0.05));
       mouseY = lerp(mouseY, targetOrbMouseY, kf(0.05));
+      // Poke springs (sub-stepped so a slow frame can't blow them up).
+      for (let n = Math.ceil(dt / 0.012), h = dt / n, i = 0; i < n; i++) {
+        poke.vx += (-170 * poke.x - 9 * poke.vx) * h;  poke.x += poke.vx * h;
+        poke.vy += (-170 * poke.y - 9 * poke.vy) * h;  poke.y += poke.vy * h;
+        poke.vs += (-210 * poke.s - 8 * poke.vs) * h;  poke.s += poke.vs * h;
+      }
+      poke.spin *= Math.exp(-dt * 3);
+      poke.flash *= Math.exp(-dt * 4.5);
+
       const spin = dt * 60;
-      orb.rotation.y += (targetRotSpeed + mouseX * 0.02) * spin;
+      orb.rotation.y += (targetRotSpeed + mouseX * 0.02) * spin + poke.spin * dt;
       orb.rotation.x += (targetRotSpeed * 0.4 + mouseY * 0.02) * spin;
 
-      orb.position.x = lerp(orb.position.x, targetX, kf(0.045));
+      orbBaseX = lerp(orbBaseX, targetX, kf(0.045));
       orbBaseY = lerp(orbBaseY, targetY, kf(0.045));
-      orb.position.y = orbBaseY + Math.sin(elapsed * 1.2) * 0.08;   // gentle float
+      orb.position.x = orbBaseX + poke.x;
+      orb.position.y = orbBaseY + Math.sin(elapsed * 1.2) * 0.08 + poke.y;   // gentle float
 
       // Breathing + hover + heartbeat
       baseScale = lerp(baseScale, targetScale * hoverScaleFactor, kf(0.045));
       const breathe = 1.0 + Math.sin(elapsed * 1.5) * 0.02;
-      orb.scale.setScalar(baseScale * breathe * (1 + beat * 0.07));
+      orb.scale.setScalar(baseScale * breathe * (1 + beat * 0.07) * (1 + poke.s));
 
       glowMesh.scale.copy(orb.scale).multiplyScalar(1.2);
       glowMesh.position.copy(orb.position);
-      const baseGlow = 0.03 + u.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02 + beat * 0.05;
+      const baseGlow = 0.03 + u.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02 + beat * 0.05 + poke.flash * 0.06;
       glowMat.opacity = baseGlow * hoverGlowFactor;
 
       renderer.render(scene, camera);

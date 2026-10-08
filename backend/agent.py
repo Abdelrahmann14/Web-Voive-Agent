@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import re
+import time
 
 import anthropic as anthropic_sdk
 import numpy as np
@@ -221,13 +222,91 @@ def _space_phone_digits(text: str) -> str:
     return _PHONE_RUN.sub(repl, text)
 
 
+def _ago(t: float) -> str:
+    s = max(0, int(time.monotonic() - t))
+    return f"{s} s" if s < 90 else f"{s // 60} min"
+
+
+class Screen:
+    """What the caller's page shows right now, mirrored from the browser over the
+    data channel. Rendered into a short private note on every LLM call so Ikli
+    always knows whether the booking form is open, what's typed in it, whether the
+    link went out, and so on."""
+
+    TYPING_WINDOW_S = 2.5   # a keystroke this recent counts as "typing right now"
+
+    def __init__(self) -> None:
+        # never_opened | open | closed_by_caller | closed_by_you | submitted
+        self.form = "never_opened"
+        self.form_since = 0.0
+        self.form_opens = 0
+        self.field = ""
+        self.focused = False
+        self.last_typed = 0.0
+        self.submitted = ""
+        self.link: dict | None = None     # {"channel", "to", "ok", "at"}
+        self.hidden_since = 0.0           # tab in the background since (0 = visible)
+        self.device = ""
+        self.pokes = 0
+        self.last_poke = 0.0
+        self.shown = asyncio.Event()      # set when the page confirms the form is up
+
+    def _form_line(self) -> str:
+        if self.form == "never_opened":
+            return "Booking form: not opened yet."
+        if self.form == "open":
+            parts = [f"Booking form: OPEN on their screen ({_ago(self.form_since)})"]
+            if self.form_opens > 1:
+                parts.append(f"opened {self.form_opens} times this call")
+            if self.last_typed and time.monotonic() - self.last_typed < self.TYPING_WINDOW_S:
+                parts.append("they're typing right now")
+            elif self.focused:
+                parts.append("cursor in the field")
+            parts.append(f'field contains "{self.field}"' if self.field else "field is empty")
+            return ", ".join(parts) + "."
+        if self.form == "submitted":
+            return f'Booking form: they submitted "{self.submitted}" ({_ago(self.form_since)} ago); it is closed now.'
+        who = "they closed it" if self.form == "closed_by_caller" else "you closed it"
+        draft = f', draft kept: "{self.field}"' if self.field else ", nothing typed"
+        return f"Booking form: closed, {who} ({_ago(self.form_since)} ago){draft}."
+
+    def note(self) -> str:
+        lines = ["LIVE SCREEN (private, what the caller's page shows this moment; never read it out):"]
+        if self.device:
+            lines.append(f"Device: {self.device}.")
+        lines.append(self._form_line())
+        if self.link:
+            l = self.link
+            how = "sent" if l["ok"] else "FAILED to send"
+            lines.append(f"Booking link: {how} via {l['channel']} to {l['to']} ({_ago(l['at'])} ago).")
+        else:
+            lines.append("Booking link: not sent.")
+        if self.hidden_since:
+            lines.append(f"They switched to another tab or app {_ago(self.hidden_since)} ago (can still hear you).")
+        if self.pokes:
+            lines.append(f"They've poked the orb {self.pokes} times this call (last {_ago(self.last_poke)} ago).")
+        return "\n".join(lines)
+
+
 class IkliAgent(Agent):
     """Agent with output sanitizers so the model's habits never leak through:
 
     - em dashes are never spoken or shown (replaced with a comma),
     - phone numbers are spoken one digit at a time for a clear read-back, while
       the on-screen transcript keeps them as a compact number.
+
+    Every LLM call also gets the live screen note appended as the last message
+    (after the cached history, so prompt caching is unaffected).
     """
+
+    def __init__(self, *, screen: Screen, **kwargs):
+        super().__init__(**kwargs)
+        self._screen = screen
+
+    def llm_node(self, chat_ctx, tools, model_settings):
+        ctx = chat_ctx.copy()
+        ctx.add_message(role="system", content=self._screen.note())
+        return Agent.default.llm_node(self, ctx, tools, model_settings)
 
     async def tts_node(self, text, model_settings):
         async def _clean():
@@ -323,6 +402,9 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
 # (the free LiveKit plan allows only 5 sessions at once).
 PRECONNECT_WAIT_S = float(os.environ.get("PRECONNECT_WAIT_S", "60"))
 
+# Ikli reacts out loud to an orb poke at most this often; extra pokes just add up.
+POKE_COOLDOWN_S = 5.0
+
 
 def _has_mic(p: rtc.RemoteParticipant) -> bool:
     return any(
@@ -384,14 +466,37 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception:
             pass
 
+    screen = Screen()
+
     @function_tool
     async def open_contact_form() -> str:
-        """Show the on-screen contact form so the caller can type EITHER their phone
+        """Show the on-screen booking form so the caller can type EITHER their phone
         number (with country code) OR their email, whichever they prefer, while the call
-        stays live. Call this when they want to book. After calling it, tell them the form
-        appeared and that they can enter a phone number or an email, then wait."""
+        stays live. Call this when they want to book (also to reopen it if they ask
+        again; their draft is kept). The result says whether the form actually appeared."""
+        if screen.form == "open":
+            await _publish({"type": "open_form"})   # the page nudges the open form
+            return "already_open: the form is already on their screen"
+        screen.shown.clear()
         await _publish({"type": "open_form"})
+        try:
+            await asyncio.wait_for(screen.shown.wait(), 2.5)
+        except asyncio.TimeoutError:
+            return "no_confirmation: the page didn't confirm the form appeared; ask if they can see it"
+        if screen.field:
+            return f'form_shown: their earlier entry "{screen.field}" is already filled in'
         return "form_shown"
+
+    @function_tool
+    async def close_contact_form() -> str:
+        """Hide the booking form. Only when the caller changes their mind, or would rather
+        say their number or email out loud."""
+        if screen.form != "open":
+            return "not_open"
+        await _publish({"type": "close_form"})
+        screen.form = "closed_by_you"
+        screen.form_since = time.monotonic()
+        return "closed"
 
     @function_tool
     async def send_booking_link(contact: str) -> str:
@@ -403,6 +508,10 @@ async def entrypoint(ctx: agents.JobContext):
         url = await asyncio.to_thread(_calendly_booking_url)
         if not url:
             return "no_link_configured"
+        how_to = (
+            "Open it, pick a day and time that suits you, and you'll get a calendar invite "
+            "with the Zoom link. It's a free 30-minute intro call with the Iklipse team."
+        )
         if "@" in raw:
             addr = raw
             if "." not in addr.split("@")[-1]:
@@ -413,8 +522,9 @@ async def entrypoint(ctx: agents.JobContext):
                 send_email,
                 addr,
                 "Your Iklipse booking link",
-                f"Hi!\n\nHere's your Iklipse booking link, pick a time that suits you:\n{url}\n\nSee you soon.",
+                f"Hi!\n\nHere's your Iklipse booking link:\n{url}\n\n{how_to}\n\nSee you soon.",
             )
+            screen.link = {"channel": "email", "to": addr, "ok": ok, "at": time.monotonic()}
         else:
             digits = digits_only(raw)
             if len(digits) < 8:
@@ -424,8 +534,9 @@ async def entrypoint(ctx: agents.JobContext):
             ok, _ = await asyncio.to_thread(
                 send_whatsapp,
                 digits,
-                f"Hey! Here's your Iklipse booking link, pick a time that suits you: {url}",
+                f"Hey! Here's your Iklipse booking link: {url}\n\n{how_to}",
             )
+            screen.link = {"channel": "WhatsApp", "to": digits, "ok": ok, "at": time.monotonic()}
         return "sent" if ok else "send_failed"
 
     session = build_session(ctx)
@@ -442,18 +553,20 @@ async def entrypoint(ctx: agents.JobContext):
     await session.start(
         room=ctx.room,
         agent=IkliAgent(
+            screen=screen,
             instructions=instructions_for(known_name),
             tools=[
                 open_contact_form,
+                close_contact_form,
                 send_booking_link,
             ],
         ),
     )
 
-    # Bridge the browser form back to the agent over the data channel. The frontend
-    # publishes {"type":"submit","value":..} when the caller submits (phone or email,
-    # auto-detected), {"type":"form_closed"} when they dismiss the form empty, and
-    # {"type":"idle"} / {"type":"idle_end"} when the form sits empty and they go quiet.
+    # Bridge the browser back to the agent over the data channel (topic 'ikli').
+    # The page mirrors what the caller sees (form open/closed, what's typed, tab
+    # hidden, device) into `screen`, which every LLM call reads; only real moments
+    # (a submit, a dismissed form, going quiet, a poke) trigger a reply.
     def _on_submitted(value: str) -> None:
         if "@" in value:  # they entered an email
             state["email"] = value
@@ -476,9 +589,15 @@ async def entrypoint(ctx: agents.JobContext):
 
     prompts = {
         "form_closed": (
-            "The caller closed the contact form without entering anything. Don't push. "
+            "The caller closed the booking form without entering anything. Don't push. "
             "In one short, relaxed line, let them know that's fine and they can also just "
-            "say their number or email out loud if that's easier, or carry on chatting."
+            "say their number or email out loud if that's easier, or carry on chatting. "
+            "Don't repeat anything you just said."
+        ),
+        "form_closed_draft": (
+            "The caller closed the booking form without sending what they'd typed. Don't "
+            "push. One short, relaxed line: no problem, they can send it whenever, say it "
+            "out loud instead, or just carry on chatting. Don't repeat anything you just said."
         ),
         "idle": (
             "The caller has gone quiet with the form open. Check in briefly and warmly: "
@@ -492,17 +611,121 @@ async def entrypoint(ctx: agents.JobContext):
         ),
     }
 
+    # Pokes: the caller clicked or tapped the orb. Ikli reacts out loud like a person
+    # poked mid-conversation, but never over the caller, never before the greeting is
+    # done, at most once every few seconds, and only now and then once the joke is
+    # old. Extra pokes still count (the screen note carries the total).
+    poke = {"greeted": False, "said_at": 0.0, "said": 0, "said_count": 0}
+
+    def _poke_prompt(burst: int, mid_sentence: bool) -> str:
+        n = screen.pokes
+        if n <= 1:
+            mood = "First poke: surprised, amused."
+        elif n <= 3:
+            mood = "They're doing it again: tease them a little."
+        elif n <= 7:
+            mood = "They keep doing it: mock-offended or mock-exasperated, still friendly."
+        else:
+            mood = "They just won't stop: good-humored resignation, a couple of words."
+        times = f" {burst} times in a row" if burst > 1 else ""
+        follow = (
+            "You were in the middle of saying something: react, then finish your point in one sentence."
+            if mid_sentence
+            else "React, then carry on naturally. If you'd just asked them something, don't ask it "
+            "again; the reaction alone is enough."
+        )
+        return (
+            f"The caller just poked you{times} (clicked or tapped the orb on their screen). "
+            f"That's poke number {n} this call. {mood} A real person's reaction: a few words "
+            "up to one short sentence, playful and a little cheeky, wording you haven't used "
+            f"yet this call. Don't count the pokes out loud every time. {follow}"
+        )
+
+    async def _on_poke(burst: int) -> None:
+        screen.pokes += burst
+        screen.last_poke = now = time.monotonic()
+        if not poke["greeted"] or session.user_state == "speaking" or session.agent_state == "thinking":
+            return
+        if now - poke["said_at"] < POKE_COOLDOWN_S:
+            return
+        if poke["said"] >= 5 and screen.pokes - poke["said_count"] < 5:
+            return
+        mid = session.agent_state == "speaking"
+        if mid and screen.form == "open":
+            return  # don't derail the booking for a joke
+        poke.update(said_at=now, said=poke["said"] + 1, said_count=screen.pokes)
+        if mid:
+            try:
+                await session.interrupt()
+            except Exception:
+                return
+        session.generate_reply(instructions=_poke_prompt(burst, mid))
+
+    # A page event that deserves a spoken reaction waits until Ikli isn't mid-sentence,
+    # and is dropped if the caller spoke in the meantime or it no longer applies
+    # (otherwise a queued reply lands late and repeats what was just said).
+    heard = {"at": 0.0}
+
+    async def _reply_when_free(instructions: str, still_relevant) -> None:
+        asked = time.monotonic()
+        for _ in range(100):                       # up to ~20 s
+            if session.agent_state not in ("speaking", "thinking") and session.user_state != "speaking":
+                break
+            await asyncio.sleep(0.2)
+        else:
+            return
+        if heard["at"] > asked or not still_relevant():
+            return
+        session.generate_reply(instructions=instructions)
+
+    def _text(msg: dict, key: str = "value") -> str:
+        return str(msg.get(key) or "").strip()[:120]
+
     def _on_data(packet: rtc.DataPacket) -> None:
         try:
             if packet.topic and packet.topic != "ikli":
                 return
             msg = json.loads(bytes(packet.data).decode("utf-8"))
             t = msg.get("type")
-            if t == "submit":
-                value = str(msg.get("value") or "").strip()[:120]
+            now = time.monotonic()
+            if t == "client":
+                screen.device = {"phone": "phone", "tablet": "tablet"}.get(msg.get("device"), "computer")
+            elif t == "form_shown":
+                if screen.form != "open":
+                    screen.form_opens += 1
+                    screen.form_since = now
+                screen.form = "open"
+                screen.field = _text(msg)
+                screen.focused = False
+                screen.shown.set()
+            elif t == "form_input":
+                screen.field = _text(msg)
+                screen.last_typed = now
+            elif t == "form_focus":
+                screen.focused = bool(msg.get("focused"))
+            elif t == "visibility":
+                screen.hidden_since = now if msg.get("hidden") else 0.0
+            elif t == "poke":
+                burst = max(1, min(20, int(msg.get("n") or 1)))
+                asyncio.ensure_future(_on_poke(burst))
+            elif t == "submit":
+                value = _text(msg)
                 if value:
+                    screen.form = "submitted"
+                    screen.form_since = now
+                    screen.submitted = screen.field = value
+                    screen.focused = False
                     _on_submitted(value)
-            elif t in prompts:
+            elif t == "form_closed":
+                screen.form = "closed_by_caller"
+                screen.form_since = now
+                screen.field = _text(msg)
+                screen.focused = False
+                asyncio.ensure_future(_reply_when_free(
+                    prompts["form_closed_draft" if screen.field else "form_closed"],
+                    lambda: screen.form == "closed_by_caller",
+                ))
+            elif t in ("idle", "idle_end"):
                 session.generate_reply(instructions=prompts[t])
         except Exception:
             return
@@ -513,6 +736,7 @@ async def entrypoint(ctx: agents.JobContext):
     def _capture_contact(ev) -> None:
         if not ev.is_final:
             return
+        heard["at"] = time.monotonic()
         phone, email = _contacts_in(ev.transcript or "")
         if phone and phone != state["phone"]:
             state["phone"] = phone
@@ -530,18 +754,20 @@ async def entrypoint(ctx: agents.JobContext):
 
     # Speak first, instantly.
     greeting_pcm = ctx.proc.userdata.get("greeting_pcm")
-    if known_name:
-        # Personalized greeting must be synthesized live (name varies).
-        await session.say(f"Hey {known_name}! What can I do for you?", allow_interruptions=True)
-    elif greeting_pcm:
-        # Play the pre-rendered greeting audio, no synthesis latency.
-        await session.say(
-            FIXED_GREETING, audio=_pcm_to_frames(greeting_pcm), allow_interruptions=True
-        )
-    else:
-        # Fallback: live TTS if pre-render failed.
-        await session.say(FIXED_GREETING, allow_interruptions=True)
-
+    try:
+        if known_name:
+            # Personalized greeting must be synthesized live (name varies).
+            await session.say(f"Hey {known_name}! What can I do for you?", allow_interruptions=True)
+        elif greeting_pcm:
+            # Play the pre-rendered greeting audio, no synthesis latency.
+            await session.say(
+                FIXED_GREETING, audio=_pcm_to_frames(greeting_pcm), allow_interruptions=True
+            )
+        else:
+            # Fallback: live TTS if pre-render failed.
+            await session.say(FIXED_GREETING, allow_interruptions=True)
+    finally:
+        poke["greeted"] = True
 
 if __name__ == "__main__":
     agents.cli.run_app(
