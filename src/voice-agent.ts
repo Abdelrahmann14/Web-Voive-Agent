@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Frontend LiveKit integration for the Iklipse voice UI.
  *
@@ -42,58 +43,241 @@ let agentJoinTimer = 0;
 const audioEls = new Set<HTMLMediaElement>();
 
 // Bubble/transcript state, keyed by transcription segment id (dedupes interim vs final).
-// `out` is the element we write text into; agent bubbles reveal it with a typewriter
-// (see the tick loop) so words appear in step with the voice instead of all at once.
+// Agent bubbles are built word by word: each new word flies out of the orb and lands
+// in its place in the bubble (see the word-flight loop below).
 type Segment = {
   el: HTMLElement;
-  out: HTMLElement;         // text sink (a <span> for agent, the <p> for user)
-  cursor: HTMLElement | null;
+  out: HTMLElement;         // text sink: the <p> (user) or a word container (agent)
   isUser: boolean;
-  text: string;            // full text so far (used for the report + typewriter target)
+  text: string;             // full text so far (used for the report)
   order: number;
-  shown: number;           // chars currently revealed (agent typewriter)
-  ended: boolean;          // stream for this segment finished
+  words: string[];          // agent: words received so far
+  spans: HTMLElement[];     // agent: one <span> per revealed word
+  ended: boolean;           // stream for this segment finished
+  lastEmit: number;         // agent: timestamp of the last revealed word
 };
 const segments = new Map<string, Segment>();
 let order = 0;
 
-// ---- Typewriter (agent bubbles) -------------------------------------------
-// Reveal agent text at a natural pace, speeding up when a lot is buffered so the
-// caption never trails the voice by more than ~1s. One shared rAF loop drives all
-// active segments.
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+// ---- Agent audio level (drives the orb's pulse) ---------------------------
+// One shared AudioContext, resumed inside the mic-press gesture. The agent's
+// remote track is tapped with an analyser; index.html polls __agentLevel()
+// every frame and turns it into the orb's heartbeat.
+let audioCtx: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+let analyserSrc: MediaStreamAudioSourceNode | null = null;
+let analysedTrack: RemoteTrack | null = null;
+const levelBuf = new Float32Array(1024);
+
+function ensureAudioCtx(): AudioContext | null {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  } catch {
+    audioCtx = null;
+  }
+  return audioCtx;
+}
+
+function watchAgentAudio(track: RemoteTrack) {
+  stopWatchingAgentAudio();
+  const ctx = ensureAudioCtx();
+  if (!ctx || !track.mediaStreamTrack) return;
+  try {
+    analyserSrc = ctx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0;
+    analyserSrc.connect(analyser);
+    analysedTrack = track;
+  } catch {
+    stopWatchingAgentAudio();
+  }
+}
+
+function stopWatchingAgentAudio() {
+  try { analyserSrc?.disconnect(); } catch { /* already gone */ }
+  analyserSrc = null;
+  analyser = null;
+  analysedTrack = null;
+}
+
+/** Agent voice loudness right now, 0..~1 (RMS of the latest audio frame). */
+function agentLevel(): number {
+  if (!analyser || !live) return 0;
+  analyser.getFloatTimeDomainData(levelBuf);
+  let sum = 0;
+  for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i];
+  return Math.sqrt(sum / levelBuf.length);
+}
+
+// ---- Word reveal + flight (agent bubbles) ---------------------------------
+// The agent's transcript arrives word by word, already paced to the voice by the
+// server. Each word is placed (invisible) in the bubble, and a copy of it flies
+// from the orb's rim along a soft arc into that spot, sharpening as it travels.
+// One shared rAF loop paces the words and moves every flying copy.
 const typing = new Set<Segment>();
+type Flight = {
+  el: HTMLElement;
+  target: HTMLElement;
+  sx: number;
+  sy: number;
+  t0: number;
+  dur: number;
+  bow: number;
+};
+const flights = new Set<Flight>();
 let rafId = 0;
-let lastTs = 0;
+const MAX_FLIGHTS = 14;     // beyond this, words just fade in (keeps it cheap on bursts)
 
-function tick(ts: number) {
-  if (!lastTs) lastTs = ts;
-  const dt = Math.min(0.05, (ts - lastTs) / 1000); // clamp big gaps (tab switch)
-  lastTs = ts;
+function flightLayer(): HTMLElement {
+  let layer = document.getElementById('word-flight');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.id = 'word-flight';
+    layer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(layer);
+  }
+  return layer;
+}
 
-  for (const seg of typing) {
-    if (seg.shown >= seg.text.length) {
-      if (seg.ended) {
-        typing.delete(seg);
-        if (seg.cursor) { seg.cursor.remove(); seg.cursor = null; }
-      }
+function centerOf(el: HTMLElement) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function launchFlight(span: HTMLElement, word: string): boolean {
+  const orb = window.__orbScreen?.();
+  if (!orb || document.hidden || reduceMotion.matches || flights.size >= MAX_FLIGHTS) return false;
+
+  const to = centerOf(span);
+  let dx = to.x - orb.x;
+  let dy = to.y - orb.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  dx /= dist;
+  dy /= dist;
+  // Start just inside the orb's rim, on the side facing the word.
+  const sx = orb.x + dx * orb.r * 0.72;
+  const sy = orb.y + dy * orb.r * 0.72;
+
+  const cs = getComputedStyle(span);
+  const el = document.createElement('span');
+  el.className = 'w-fly';
+  el.textContent = word;
+  el.style.font = cs.font;
+  el.style.letterSpacing = cs.letterSpacing;
+  el.style.color = cs.color;
+  el.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -50%) scale(0.3)`;
+  flightLayer().appendChild(el);
+
+  const travel = Math.hypot(to.x - sx, to.y - sy);
+  const dur = Math.min(900, 460 + travel * 0.42);
+  el.animate(
+    [
+      { opacity: 0, filter: 'blur(7px)', textShadow: '0 0 18px rgba(255,76,57,0.95)', color: '#ff4c39' },
+      { opacity: 1, offset: 0.22 },
+      { filter: 'blur(0px)', textShadow: '0 0 12px rgba(255,76,57,0.55)', color: '#ff4c39', offset: 0.55 },
+      { opacity: 1, filter: 'blur(0px)', textShadow: '0 0 0 rgba(255,76,57,0)', color: cs.color },
+    ],
+    { duration: dur, easing: 'linear', fill: 'forwards' },
+  );
+  flights.add({ el, target: span, sx, sy, t0: performance.now(), dur, bow: 0.7 + Math.random() * 0.6 });
+  return true;
+}
+
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function stepFlights(now: number) {
+  for (const f of flights) {
+    const p = Math.min(1, (now - f.t0) / f.dur);
+    if (!f.target.isConnected) {
+      f.el.remove();
+      flights.delete(f);
       continue;
     }
-    const remaining = seg.text.length - seg.shown;
-    // ~45 chars/s baseline; ramp up with backlog (cap 700) so it stays near the audio.
-    const perSec = Math.min(700, Math.max(45, remaining * 3));
-    const step = Math.max(1, Math.round(perSec * dt));
-    seg.shown = Math.min(seg.text.length, seg.shown + step);
-    seg.out.textContent = seg.text.slice(0, seg.shown);
+    const e = easeOutCubic(p);
+    // Track the live target (the bubble grows / scrolls while the word is in the air).
+    const to = centerOf(f.target);
+    const mx = (f.sx + to.x) / 2;
+    const my = (f.sy + to.y) / 2;
+    let nx = -(to.y - f.sy);
+    let ny = to.x - f.sx;
+    const nl = Math.hypot(nx, ny) || 1;
+    nx /= nl;
+    ny /= nl;
+    if (ny > 0) { nx = -nx; ny = -ny; }       // always bow upward
+    const lift = Math.min(110, Math.hypot(to.x - f.sx, to.y - f.sy) * 0.2) * f.bow;
+    const cx = mx + nx * lift;
+    const cy = my + ny * lift;
+    const a = (1 - e) * (1 - e);
+    const b = 2 * (1 - e) * e;
+    const c = e * e;
+    const x = a * f.sx + b * cx + c * to.x;
+    const y = a * f.sy + b * cy + c * to.y;
+    const s = 0.3 + 0.7 * e;
+    f.el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) scale(${s})`;
+
+    if (p >= 1) {
+      f.target.classList.remove('w-wait');
+      f.target.classList.add('w-land');
+      f.el.remove();
+      flights.delete(f);
+    }
   }
+}
+
+/** Reveal the next word of an agent segment (with a flight unless `quiet`). */
+function emitWord(seg: Segment, quiet: boolean) {
+  const i = seg.spans.length;
+  const word = seg.words[i];
+  if (i > 0) seg.out.appendChild(document.createTextNode(' '));
+  const span = document.createElement('span');
+  span.className = 'w';
+  span.textContent = word;
+  seg.out.appendChild(span);
+  seg.spans.push(span);
 
   const c = bubblesContainer();
   if (c) c.scrollTop = c.scrollHeight;
 
-  if (typing.size) {
+  if (!quiet) {
+    span.classList.add('w-wait');            // keeps its spot, invisible until the copy lands
+    if (launchFlight(span, word)) {
+      window.__orbKick?.(1);
+      return;
+    }
+    span.classList.remove('w-wait');
+  }
+  span.classList.add('w-in');
+}
+
+function tick(now: number) {
+  for (const seg of typing) {
+    const backlog = seg.words.length - seg.spans.length;
+    if (backlog <= 0) {
+      if (seg.ended) typing.delete(seg);
+      continue;
+    }
+    // The stream is already voice-paced; this only spreads out bursts. A big
+    // backlog (tab was hidden, final flush) catches up at once, animating the tail.
+    const gap = backlog > 10 ? 0 : Math.max(45, 140 - backlog * 20);
+    if (now - seg.lastEmit < gap) continue;
+    const quietCount = backlog > 10 ? backlog - 4 : 0;
+    for (let i = 0; i < quietCount; i++) emitWord(seg, true);
+    emitWord(seg, false);
+    seg.lastEmit = now;
+  }
+
+  stepFlights(now);
+
+  if (typing.size || flights.size) {
     rafId = requestAnimationFrame(tick);
   } else {
     rafId = 0;
-    lastTs = 0;
   }
 }
 
@@ -101,7 +285,7 @@ function ensureTyping() {
   if (!rafId) rafId = requestAnimationFrame(tick);
 }
 
-/** Mark an agent segment's stream as done so its caret clears once text catches up. */
+/** Mark an agent segment's stream as done. */
 function finishSegment(segId: string) {
   const seg = segments.get(segId);
   if (seg && !seg.isUser) {
@@ -110,11 +294,24 @@ function finishSegment(segId: string) {
   }
 }
 
+function clearFlights() {
+  for (const f of flights) f.el.remove();
+  flights.clear();
+}
+
 // ---- UI helpers -----------------------------------------------------------
 
 function setStatus(text: string) {
   const el = document.getElementById('speaking-status');
-  if (el) el.textContent = text;
+  if (!el || el.textContent === text) return;
+  el.textContent = text;
+  el.dataset.state = text.toLowerCase().replace(/\s+/g, '-');
+  if (!reduceMotion.matches) {
+    el.animate(
+      [{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: 260, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    );
+  }
 }
 
 function bubblesContainer(): HTMLElement | null {
@@ -127,8 +324,12 @@ function resetTranscript() {
   segments.clear();
   order = 0;
   typing.clear();
+  clearFlights();
   if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-  lastTs = 0;
+}
+
+function splitWords(text: string): string[] {
+  return text.split(/\s+/).filter(Boolean);
 }
 
 function upsertSegment(segId: string, text: string, isUser: boolean) {
@@ -155,30 +356,10 @@ function upsertSegment(segId: string, text: string, isUser: boolean) {
   if (!seg) {
     const el = document.createElement('div');
     el.className = 'bubble ' + (isUser ? 'user' : 'agent');
-    // Agent bubbles "emerge from the orb" (fly in from the left where the orb sits);
-    // user bubbles rise from the right. Pure GPU transform, no latency cost.
-    el.style.cssText = isUser
-      ? 'align-self:flex-end;max-width:80%;background:rgba(99,102,241,0.05);border:1px solid rgba(99,102,241,0.1);border-radius:24px 24px 4px 24px;padding:20px 24px;transform-origin:right center;animation:fadeUp 0.5s cubic-bezier(0.2,0.8,0.2,1) forwards'
-      : 'align-self:flex-start;max-width:85%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:24px 24px 24px 4px;padding:20px 24px;transform-origin:left center;animation:orbEmerge 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards';
     const p = document.createElement('p');
-    p.style.cssText = 'font-size:15px;line-height:1.6';
-
-    let out: HTMLElement;
-    let cursor: HTMLElement | null = null;
-    if (isUser) {
-      out = p; // user transcript shows live, no typewriter
-    } else {
-      // Agent: a text span the typewriter grows, plus a blinking caret.
-      out = document.createElement('span');
-      cursor = document.createElement('span');
-      cursor.className = 'typing-cursor';
-      cursor.setAttribute('aria-hidden', 'true');
-      p.appendChild(out);
-      p.appendChild(cursor);
-    }
     el.appendChild(p);
     container.appendChild(el);
-    seg = { el, out, cursor, isUser, text: '', order: order++, shown: 0, ended: false };
+    seg = { el, out: p, isUser, text: '', order: order++, words: [], spans: [], ended: false, lastEmit: 0 };
     segments.set(segId, seg);
   }
 
@@ -186,10 +367,19 @@ function upsertSegment(segId: string, text: string, isUser: boolean) {
   if (isUser) {
     seg.out.textContent = clean;             // instant for the caller's own words
     container.scrollTop = container.scrollHeight;
-  } else {
-    typing.add(seg);                         // let the typewriter reveal it in step with audio
-    ensureTyping();
+    return;
   }
+
+  // Agent: words already on screen that changed (rare) are corrected in place;
+  // new words are queued for the flight loop.
+  const words = splitWords(clean);
+  const shown = Math.min(seg.spans.length, words.length);
+  for (let i = 0; i < shown; i++) {
+    if (seg.spans[i].textContent !== words[i]) seg.spans[i].textContent = words[i];
+  }
+  seg.words = words;
+  typing.add(seg);
+  ensureTyping();
 }
 
 /** Ordered, de-duplicated transcript for the End-screen report. */
@@ -219,7 +409,7 @@ function driveOrb(participants: Participant[]) {
     window.__setAgentSpeaking?.(true);   // don't let the idle watch talk over the agent
   } else if (userSpeaking) {
     setStatus('Listening');
-    window.setOrbSentiment?.(0.5);
+    window.setOrbSentiment?.(0.0);       // orb cools to the caller's indigo
     window.__setAgentSpeaking?.(false);
     window.__collectActivity?.();         // caller is talking -> reset the idle clock
   } else {
@@ -277,9 +467,11 @@ async function prepare(): Promise<void> {
         audioEl.style.display = 'none';
         document.body.appendChild(audioEl);
         audioEls.add(audioEl);
+        watchAgentAudio(track);   // the orb pulses with the agent's voice
       }
     });
     r.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+      if (track === analysedTrack) stopWatchingAgentAudio();
       for (const el of track.detach()) { el.remove(); audioEls.delete(el); }
     });
 
@@ -302,6 +494,7 @@ async function prepare(): Promise<void> {
       clearAgentJoinTimer();
       clearPreparedTimer();
       removeAudioEls();
+      stopWatchingAgentAudio();
       if (wasLive) {
         // Wrap the call up so the caller isn't left on a live-looking screen.
         setStatus('Disconnected');
@@ -391,6 +584,7 @@ function releasePrepared() {
   sessionSeq++;
   clearPreparedTimer();
   removeAudioEls();
+  stopWatchingAgentAudio();
   r.disconnect().catch(() => {});
   armPrepare();               // wake it again on the visitor's next interaction
 }
@@ -421,6 +615,7 @@ async function connect() {
     );
   }
 
+  ensureAudioCtx();            // unlock Web Audio inside the click gesture (orb pulse)
   setStatus('Connecting');
   resetTranscript();
 
@@ -464,6 +659,7 @@ async function disconnect() {
   live = false;
   localIdentity = '';
   removeAudioEls();
+  stopWatchingAgentAudio();
   if (r) await r.disconnect();
 }
 
@@ -476,6 +672,11 @@ declare global {
     __voicePrepare?: () => void;
     __getTranscript?: () => { role: string; text: string }[];
     setOrbSentiment?: (v: number) => void;
+    // Orb hooks implemented in index.html (word flights start at the orb's rim).
+    __orbScreen?: () => { x: number; y: number; r: number } | null;
+    __orbKick?: (strength?: number) => void;
+    __agentLevel?: () => number;
+    __ikliDemo?: (text: string) => void;
     // Booking-form bridge (form UI lives in index.html, the room lives here).
     __openCollectForm?: () => void;
     __closeCollectFormUI?: () => void;
@@ -553,3 +754,19 @@ window.__collectClosed = () => {
 };
 
 window.__getTranscript = () => getTranscript();
+window.__agentLevel = agentLevel;
+
+// Dev-only: play a fake agent line through the word-flight pipeline (no mic needed).
+if (import.meta.env.DEV) {
+  window.__ikliDemo = (text: string) => {
+    const id = 'demo-' + Math.random().toString(36).slice(2);
+    const words = text.split(' ');
+    let acc = '';
+    let i = 0;
+    const t = window.setInterval(() => {
+      acc += (i ? ' ' : '') + words[i++];
+      upsertSegment(id, acc, false);
+      if (i >= words.length) { window.clearInterval(t); finishSegment(id); }
+    }, 230);
+  };
+}

@@ -2,68 +2,192 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
   <title>iklipse | Cast your shadow</title>
-  
+  <script>
+    // Apply the saved theme before first paint so there is no flash.
+    try {
+      if (localStorage.getItem('ikli-theme') === 'light') {
+        document.documentElement.classList.add('light-mode');
+        document.querySelector('meta[name="theme-color"]').content = '#E2E2E6';
+      }
+    } catch (e) {}
+  </script>
+
   <!-- CDN IMPORTS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <link href="https://api.fontshare.com/v2/css?f[]=excon@1,2,500,700,900&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,400..900&family=Outfit:wght@100..400&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
 
   <style>
-    /* PAGE LAYOUT */
-    * { margin:0; padding:0; box-sizing:border-box; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
-      background: #000000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      font-family: 'Excon', sans-serif;
-      overflow: hidden;
-      color: white;
-      transition: background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1), color 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* ============================================================
+       THEME TOKENS
+       Dark is the reference. Light keeps the same roles and hierarchy on a
+       softer, dimmer canvas (no pure white surfaces, no glare).
+       Every component reads these, so a theme switch changes one class.
+       ============================================================ */
+    :root {
+      --bg: #000000;
+      --surface: rgba(255,255,255,0.045);
+      --surface-hover: rgba(255,255,255,0.08);
+      --surface-solid: #111113;
+      --card-bg: rgba(17,17,19,0.86);
+      --input-bg: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.10);
+      --border-strong: rgba(255,255,255,0.18);
+      --divider: rgba(255,255,255,0.08);
+      --text: #FAFAFA;
+      --text-2: #C4C4CC;
+      --text-muted: #8E8E98;
+      --accent: #ff4c39;
+      --accent-text: #ff5a48;
+      --accent-soft: rgba(255,76,57,0.10);
+      --accent-border: rgba(255,76,57,0.34);
+      --listen: #A5B4FC;
+      --ok: #22C55E;
+      --agent-bg: rgba(255,255,255,0.055);
+      --agent-border: rgba(255,255,255,0.10);
+      --user-bg: rgba(99,102,241,0.13);
+      --user-border: rgba(129,140,248,0.28);
+      --float-bg: rgba(22,22,25,0.6);
+      --float-border: rgba(255,255,255,0.12);
+      --start-bg: rgba(255,255,255,0.05);
+      --start-shadow: 0 0 50px rgba(255,255,255,0.05);
+      --start-shadow-hover: 0 0 60px rgba(255,76,57,0.18);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+      --shadow-float: 0 8px 24px rgba(0,0,0,0.5);
+      --shadow-float-hover: 0 12px 30px rgba(0,0,0,0.6);
+      --shadow-card: 0 18px 44px rgba(0,0,0,0.4);
+      --shadow-modal: 0 24px 60px rgba(0,0,0,0.6);
+      --scrim: rgba(0,0,0,0.55);
+      --grid-dot: rgba(255,255,255,0.13);
+      --mesh-line: rgba(255,255,255,0.10);
+      --tooltip-bg: #141416;
+      --tooltip-text: #FAFAFA;
+
+      --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-l: env(safe-area-inset-left, 0px);
+      --safe-r: env(safe-area-inset-right, 0px);
+      --edge: clamp(16px, 2.4vw, 28px);
+      --content-max: 1320px;   /* the script reads this to place the orb */
+      --panel-w: 560px;
+      color-scheme: dark;
     }
 
-    /* THE DOT GRID BACKGROUND (STITCH EFFECT) */
+    html.light-mode {
+      --bg: #E2E2E6;
+      --surface: rgba(255,255,255,0.5);
+      --surface-hover: rgba(255,255,255,0.75);
+      --surface-solid: #EFEFF2;
+      --card-bg: rgba(239,239,242,0.92);
+      --input-bg: rgba(24,24,27,0.05);
+      --border: rgba(24,24,27,0.11);
+      --border-strong: rgba(24,24,27,0.19);
+      --divider: rgba(24,24,27,0.10);
+      --text: #18181B;
+      --text-2: #3F3F46;
+      --text-muted: #61616B;
+      --accent-text: #E03A27;
+      --accent-soft: rgba(255,76,57,0.10);
+      --accent-border: rgba(255,76,57,0.38);
+      --listen: #4F46E5;
+      --ok: #16A34A;
+      --agent-bg: rgba(255,255,255,0.55);
+      --agent-border: rgba(24,24,27,0.10);
+      --user-bg: rgba(99,102,241,0.13);
+      --user-border: rgba(99,102,241,0.30);
+      --float-bg: rgba(242,242,245,0.72);
+      --float-border: rgba(24,24,27,0.12);
+      --start-bg: rgba(255,255,255,0.55);
+      --start-shadow: 0 10px 30px rgba(24,24,27,0.12);
+      --start-shadow-hover: 0 14px 36px rgba(255,76,57,0.20);
+      --shadow-sm: 0 2px 8px rgba(24,24,27,0.06);
+      --shadow-float: 0 6px 18px rgba(24,24,27,0.12);
+      --shadow-float-hover: 0 10px 24px rgba(24,24,27,0.16);
+      --shadow-card: 0 12px 30px rgba(24,24,27,0.10);
+      --shadow-modal: 0 20px 50px rgba(24,24,27,0.18);
+      --scrim: rgba(40,40,46,0.35);
+      --grid-dot: rgba(24,24,27,0.20);
+      --mesh-line: rgba(24,24,27,0.12);
+      --tooltip-bg: #F4F4F6;
+      --tooltip-text: #18181B;
+      color-scheme: light;
+    }
+
+    html { background: var(--bg); }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      min-height: 100dvh;
+      font-family: 'Excon', sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Theme switch. Normal path: a circular View Transition from the toggle, with
+       every tween frozen so the new theme is captured at once (theme-instant).
+       Fallback: one shared quick fade for every surface (theme-fade). */
+    html.theme-instant *, html.theme-instant *::before, html.theme-instant *::after {
+      transition: none !important;
+    }
+    html.theme-fade, html.theme-fade *, html.theme-fade *::before, html.theme-fade *::after {
+      transition: background-color .45s ease, color .45s ease, border-color .45s ease,
+                  box-shadow .45s ease, fill .45s ease !important;
+    }
+    ::view-transition-old(root), ::view-transition-new(root) {
+      animation: none;
+      mix-blend-mode: normal;
+    }
+    ::view-transition-old(root) { z-index: 1; }
+    ::view-transition-new(root) { z-index: 2; }
+
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+    button { font-family: inherit; }
+
+    /* BACKGROUND: dot grid that follows the cursor + faint diagonal mesh */
     .bg-grid {
       position: fixed;
       inset: 0;
-      background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
-      background-size: 32px 32px;
       z-index: 0;
       pointer-events: none;
-      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 60%);
-      transition: mask-image 0.5s ease;
+      background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+      background-size: 32px 32px;
+      -webkit-mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), #000 0%, transparent 60%);
+      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), #000 0%, transparent 60%);
     }
-    
-    /* SUBTLE VECTOR ARROW SHAPES IN MESH */
     .bg-mesh {
       position: fixed;
       inset: 0;
       z-index: 1;
       opacity: 0.05;
       pointer-events: none;
-      background-image: 
-        linear-gradient(45deg, rgba(255,255,255,0.1) 1px, transparent 1px),
-        linear-gradient(-45deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+      background-image:
+        linear-gradient(45deg, var(--mesh-line) 1px, transparent 1px),
+        linear-gradient(-45deg, var(--mesh-line) 1px, transparent 1px);
       background-size: 64px 64px;
     }
 
-
-    /* Fullscreen canvas */
     #orb-canvas {
       position: fixed;
       inset: 0;
       width: 100vw;
       height: 100vh;
       z-index: 1;
+      transition: opacity .8s ease;
     }
+    /* On the report the orb steps back so the text stays readable. */
+    body.is-ended #orb-canvas { opacity: .28; }
 
-    /* All UI layers above canvas */
+    /* UI layers sit above the canvas; only real controls take the pointer. */
     .ui-layer {
       position: fixed;
       inset: 0;
@@ -74,64 +198,627 @@
       align-items: center;
       justify-content: center;
     }
-    .ui-layer button, .ui-layer a {
-      pointer-events: all;
+    .ui-layer button, .ui-layer a { pointer-events: auto; cursor: pointer; }
+    /* Inputs must stay tappable (pointer-events is inherited from .ui-layer);
+       without this the field can't be re-focused after the mobile keyboard closes. */
+    .ui-layer input, .ui-layer textarea, .ui-layer select { pointer-events: auto; }
+
+    /* Screens and report sections rise in, staggered by --d, whenever a screen opens. */
+    .entering [data-enter] {
+      animation: enterUp .6s var(--ease) both;
+      animation-delay: var(--d, 0ms);
+    }
+    @keyframes enterUp { from { opacity: 0; transform: translateY(18px); } }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* FLOATING CONTROLS: no header bar, the logo and the theme toggle float on
+       the page on their own, at the same spot on every screen. */
+    .float-logo {
+      position: fixed;
+      z-index: 100;
+      top: calc(var(--edge) + var(--safe-t));
+      left: calc(var(--edge) + var(--safe-l));
+      height: 46px;
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      border-radius: 14px;
+      text-decoration: none;
+      transition: transform .35s var(--ease), opacity .25s ease;
+    }
+    .float-logo:hover { transform: translateY(-2px); opacity: .85; }
+    .logo-shape {
+      width: 52px;
+      height: 24px;
+      background: var(--accent);
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 24'%3E%3Cpath d='M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24ZM32 24C38.6274 24 44 18.6274 44 12C44 5.37258 38.6274 0 32 0C25.3726 0 20 5.37258 20 12C20 18.6274 25.3726 24 32 24Z'/%3E%3C/svg%3E");
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 24'%3E%3Cpath d='M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24ZM32 24C38.6274 24 44 18.6274 44 12C44 5.37258 38.6274 0 32 0C25.3726 0 20 5.37258 20 12C20 18.6274 25.3726 24 32 24Z'/%3E%3C/svg%3E");
+      -webkit-mask-size: contain;
+      mask-size: contain;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-position: center;
+      mask-position: center;
+    }
+
+    #theme-toggle {
+      position: fixed;
+      z-index: 100;
+      top: calc(var(--edge) + var(--safe-t));
+      right: calc(var(--edge) + var(--safe-r));
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      background: var(--float-bg);
+      border: 1px solid var(--float-border);
+      box-shadow: var(--shadow-float);
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
       cursor: pointer;
+      transition: transform .35s var(--ease), box-shadow .35s var(--ease), border-color .25s ease;
     }
-    /* Inputs must stay tappable (pointer-events is inherited, and .ui-layer is
-       'none'); without this the field can't be re-focused after the mobile
-       keyboard closes. */
-    .ui-layer input, .ui-layer textarea, .ui-layer select {
-      pointer-events: all;
+    #theme-toggle:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-float-hover);
+    }
+    #theme-toggle:active { transform: scale(.94); }
+    #theme-toggle .material-symbols-outlined {
+      grid-area: 1 / 1;
+      font-size: 22px;
+      transition: transform .5s var(--ease), opacity .3s ease;
+    }
+    #theme-toggle .icon-moon { opacity: 0; transform: rotate(-90deg) scale(.5); }
+    html.light-mode #theme-toggle .icon-sun { opacity: 0; transform: rotate(90deg) scale(.5); }
+    html.light-mode #theme-toggle .icon-moon { opacity: 1; transform: none; }
+
+    /* TOOLTIPS (mouse only) */
+    [data-tooltip] { position: relative; }
+    [data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 12px);
+      left: 50%;
+      transform: translate(-50%, 8px);
+      padding: 8px 14px;
+      background: var(--tooltip-bg);
+      color: var(--tooltip-text);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .02em;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity .25s ease, transform .3s var(--ease), visibility .25s;
+      z-index: 1000;
+      font-family: 'Excon', sans-serif;
+    }
+    [data-tooltip]:hover::after { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+    /* The toggle lives at the top-right edge: open its tooltip below, right-aligned. */
+    #theme-toggle[data-tooltip]::after {
+      bottom: auto;
+      top: calc(100% + 10px);
+      left: auto;
+      right: 0;
+      transform: translateY(-6px);
+    }
+    #theme-toggle[data-tooltip]:hover::after { transform: translateY(0); }
+    @media (hover: none) { [data-tooltip]::after { display: none; } }
+
+    /* ---- SCREEN 1: IDLE ------------------------------------------------- */
+    .idle-cta {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(clamp(28px, 11vh, 120px) + var(--safe-b));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .start-btn {
+      position: relative;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      background: var(--start-bg);
+      border: 1px solid var(--border-strong);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--start-shadow);
+      transition: transform .45s var(--ease-spring), box-shadow .4s var(--ease), border-color .3s ease;
+    }
+    /* soft ring that invites the first press */
+    .start-btn::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      border: 1px solid var(--accent);
+      opacity: 0;
+      pointer-events: none;
+      animation: ctaRing 2.8s var(--ease) infinite;
+    }
+    @keyframes ctaRing {
+      0% { transform: scale(1); opacity: .4; }
+      70%, 100% { transform: scale(1.55); opacity: 0; }
+    }
+    .start-btn:hover {
+      transform: translateY(-3px) scale(1.04);
+      border-color: var(--accent-border);
+      box-shadow: var(--start-shadow-hover);
+    }
+    .start-btn:active { transform: scale(.94); }
+    .start-btn .material-symbols-outlined { font-size: 32px; }
+    .cta-label {
+      font-size: 14px;
+      color: var(--text-2);
+      font-weight: 500;
+      letter-spacing: .06em;
+    }
+    .connect-error {
+      display: none;
+      max-width: 340px;
+      padding: 0 16px;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--accent-text);
+      font-weight: 600;
     }
 
-    /* The End / report screen scrolls. Anchor its content to the top (not
-       justify-content:center) so a long transcript never pushes the top of the
-       report out of reach on mobile (the classic centered-flex + overflow bug). */
+    /* ---- SCREEN 2: ACTIVE CALL ------------------------------------------
+       One panel holds timer, chat and controls (flex column), so nothing can
+       overlap at any size. Wide screens: panel on the right, orb on the left.
+       Portrait / narrow: panel below, orb above it (the script places the orb
+       from this panel's real position). */
+    .call-panel {
+      position: absolute;
+      top: calc(var(--edge) + var(--safe-t) + 62px);
+      bottom: calc(clamp(16px, 5vh, 56px) + var(--safe-b));
+      right: max(calc(var(--edge) + var(--safe-r)), calc((100vw - var(--content-max)) / 2));
+      width: min(46vw, var(--panel-w));
+      display: flex;
+      flex-direction: column;
+      gap: clamp(10px, 2vh, 18px);
+    }
+    .timer-pill {
+      align-self: center;
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 20px;
+      border-radius: 100px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      font-size: 15px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: liveDot 1.8s ease-out infinite;
+    }
+    @keyframes liveDot {
+      0% { box-shadow: 0 0 0 0 rgba(255,76,57,.55); }
+      100% { box-shadow: 0 0 0 9px rgba(255,76,57,0); }
+    }
+
+    #bubbles-container {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 32px 8px 6px 4px;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+      mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+    }
+    /* Keep messages pinned to the bottom but scrollable when they overflow
+       (avoids the Chrome flex-end + overflow scroll bug). */
+    #bubbles-container > :first-child { margin-top: auto; }
+
+    .bubble {
+      max-width: 86%;
+      padding: 14px 18px;
+      border-radius: 20px;
+      border: 1px solid transparent;
+    }
+    .bubble p {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+    .bubble.agent {
+      align-self: flex-start;
+      background: var(--agent-bg);
+      border-color: var(--agent-border);
+      border-bottom-left-radius: 6px;
+      transform-origin: left bottom;
+      animation: agentIn .45s var(--ease) both;
+    }
+    .bubble.user {
+      align-self: flex-end;
+      background: var(--user-bg);
+      border-color: var(--user-border);
+      border-bottom-right-radius: 6px;
+      transform-origin: right bottom;
+      animation: userIn .4s var(--ease) both;
+    }
+    @keyframes agentIn { from { opacity: 0; transform: translateX(-18px) scale(.94); } }
+    @keyframes agentInDown { from { opacity: 0; transform: translateY(-14px) scale(.95); } }
+    @keyframes userIn { from { opacity: 0; transform: translateY(12px) scale(.97); } }
+
+    /* Agent words: each one waits (invisible, holding its place) while its copy
+       flies out of the orb, then lands with a short glow. */
+    .w { display: inline-block; }
+    .w-wait { opacity: 0; }
+    .w-in { animation: wIn .35s var(--ease) both; }
+    .w-land { animation: wLand .7s ease-out; }
+    @keyframes wIn { from { opacity: 0; transform: translateY(4px); filter: blur(3px); } }
+    @keyframes wLand {
+      from { text-shadow: 0 0 14px rgba(255,76,57,.6); }
+      to { text-shadow: 0 0 0 rgba(255,76,57,0); }
+    }
+    #word-flight {
+      position: fixed;
+      inset: 0;
+      z-index: 12;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .w-fly {
+      position: absolute;
+      left: 0;
+      top: 0;
+      white-space: nowrap;
+      will-change: transform, opacity, filter;
+    }
+
+    .call-controls {
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    #speaking-status {
+      min-height: 1.3em;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--accent-text);
+      transition: color .3s ease;
+    }
+    #speaking-status[data-state="listening"] { color: var(--listen); }
+    #speaking-status[data-state="connected"],
+    #speaking-status[data-state="connecting"] { color: var(--text-2); }
+    .end-btn {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 0 40px rgba(255,76,57,.12);
+      transition: transform .4s var(--ease-spring), background-color .3s ease, box-shadow .3s ease, color .3s ease;
+    }
+    .end-btn:hover {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 10px 30px rgba(255,76,57,.35);
+      transform: translateY(-2px);
+    }
+    .end-btn:active { transform: scale(.94); }
+    .end-btn .material-symbols-outlined { font-size: 30px; }
+
+    /* ---- SCREEN 3: REPORT ----------------------------------------------- */
     #screen-ended {
-      justify-content: flex-start;
+      justify-content: flex-start;   /* never push the report top out of reach */
+      overflow-y: auto;
+      pointer-events: auto;
+      padding: calc(var(--edge) + var(--safe-t) + 76px) 0 calc(48px + var(--safe-b));
+      /* content fades out under the floating logo / toggle instead of a header bar */
+      -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--edge) + var(--safe-t) + 26px), #000 calc(var(--edge) + var(--safe-t) + 76px));
+      mask-image: linear-gradient(to bottom, transparent calc(var(--edge) + var(--safe-t) + 26px), #000 calc(var(--edge) + var(--safe-t) + 76px));
     }
-
-    /* Session-report loading spinner */
+    .report-wrap {
+      width: calc(100% - 32px);
+      max-width: 520px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #report-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 70px 0;
+    }
+    #report-loading p { font-size: 15px; color: var(--text-2); letter-spacing: .02em; }
     .report-spinner {
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      border: 3px solid rgba(255, 76, 57, 0.18);
-      border-top-color: #ff4c39;
-      animation: report-spin 0.8s linear infinite;
+      border: 3px solid rgba(255,76,57,.18);
+      border-top-color: var(--accent);
+      animation: report-spin .8s linear infinite;
     }
     @keyframes report-spin { to { transform: rotate(360deg); } }
-
-    /* desktop-optimized containers */
-    .content-max-width {
-      width: 100%;
-      max-width: 1200px;
-      height: 100%;
-      position: relative;
+    #report-content { display: none; width: 100%; flex-direction: column; align-items: center; }
+    .report-title {
+      font-size: clamp(26px, 5vw, 34px);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      text-align: center;
+      color: var(--text);
     }
-
-    /* chat bubbles for desktop */
-    #bubbles-container {
-      position: absolute;
-      top: 200px;
-      right: 0;
-      width: 45%;
-      max-width: 550px;
-      bottom: 250px;
-      padding: 0 40px;
+    .report-sub {
+      font-size: 15px;
+      color: var(--text-2);
+      margin-top: 10px;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .report-card {
+      width: 100%;
+      margin-top: 32px;
+      padding: clamp(20px, 4vw, 32px);
+      border-radius: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      overflow-y: auto;
-      pointer-events: auto;
-      mask-image: linear-gradient(to bottom, transparent, black 10%);
-      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      gap: 22px;
+      text-align: left;
     }
-    /* Keep messages pinned to the bottom, but stay scrollable when they overflow
-       (avoids the Chrome flex justify-content:flex-end + overflow scroll bug). */
-    #bubbles-container > :first-child { margin-top: auto; }
-    /* Custom scrollbars, chat + report */
+    .row-head { display: flex; align-items: center; gap: 12px; }
+    .row-head .material-symbols-outlined { color: var(--accent); font-size: 20px; }
+    .row-head .label { font-weight: 600; font-size: 14px; color: var(--text); }
+    .row-split { display: flex; justify-content: space-between; align-items: center; }
+    #final-duration { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 14px; color: var(--text); }
+    .divider { height: 1px; background: var(--divider); }
+    #final-transcription {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-2);
+      line-height: 1.65;
+      max-height: 140px;
+      overflow-y: auto;
+      padding-right: 8px;
+    }
+    #final-transcription strong { color: var(--accent-text); }
+    #final-summary {
+      margin-top: 12px;
+      font-size: 13.5px;
+      color: var(--text-2);
+      font-style: italic;
+      line-height: 1.65;
+    }
+
+    #export-container {
+      width: 100%;
+      max-width: 480px;
+      margin-top: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #export-options {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+    }
+    .export-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .icon-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      transition: transform .35s var(--ease-spring), border-color .25s ease, background-color .25s ease;
+    }
+    .icon-btn:hover { transform: translateY(-3px); border-color: var(--border-strong); background: var(--surface-hover); }
+    .icon-btn .material-symbols-outlined { color: var(--accent); }
+    #export-input-area { display: none; width: 100%; text-align: center; }
+    .input-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 6px 6px 6px 18px;
+      border-radius: 18px;
+      background: var(--input-bg);
+      border: 1px solid var(--border-strong);
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .input-pill:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 4px var(--accent-soft); }
+    .input-pill input {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 15px;
+      padding: 8px 0;
+    }
+    .input-pill input::placeholder { color: var(--text-muted); }
+    /* Kill Chrome's autofill background */
+    .input-pill input:-webkit-autofill,
+    .input-pill input:-webkit-autofill:hover,
+    .input-pill input:-webkit-autofill:focus {
+      -webkit-text-fill-color: var(--text);
+      -webkit-box-shadow: 0 0 0 1000px transparent inset;
+      caret-color: var(--text);
+      transition: background-color 9999s ease-in-out 0s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-weight: 700;
+      padding: 12px 22px;
+      border-radius: 14px;
+      box-shadow: 0 8px 22px rgba(255,76,57,.25);
+      transition: transform .3s var(--ease-spring), box-shadow .3s ease, filter .2s ease;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(255,76,57,.32); filter: brightness(1.05); }
+    .btn-primary:active { transform: scale(.97); }
+    .btn-primary:disabled { opacity: .7; cursor: default; transform: none; }
+    .btn-ghost {
+      background: var(--surface);
+      color: var(--text-2);
+      border: 1px solid var(--border);
+      font-weight: 600;
+      border-radius: 14px;
+      transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+    }
+    .btn-ghost:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border-strong); }
+    .link-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 13px;
+      transition: color .2s ease;
+    }
+    .link-btn:hover { color: var(--accent-text); }
+    #export-input-area .link-btn { margin-top: 16px; }
+    #export-success {
+      display: none;
+      margin-top: 12px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--accent-text);
+      animation: fadeUp .4s ease both;
+    }
+    #export-success[data-kind="ok"] { color: var(--ok); }
+    .restart-btn { margin-top: 40px; font-size: 14px; }
+
+    /* ---- MODALS ---------------------------------------------------------- */
+    .modal {
+      z-index: 200;
+      padding: 16px;
+      background: var(--scrim);
+      pointer-events: auto;
+    }
+    #confirmation-modal { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+    #collect-modal { z-index: 210; }
+    /* Solid card, no backdrop blur: opening it while the agent speaks never
+       spikes the compositor and glitches the audio. */
+    .modal-card {
+      width: 100%;
+      max-width: 420px;
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto;
+      padding: clamp(24px, 5vw, 40px);
+      border-radius: 24px;
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-modal);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 22px;
+    }
+    .modal.open { animation: scrimIn .25s ease both; }
+    .modal.open .modal-card { animation: cardIn .45s var(--ease-spring) both; }
+    @keyframes scrimIn { from { opacity: 0; } }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+    .modal-icon {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: var(--accent);
+    }
+    .modal-icon .material-symbols-outlined { font-size: 30px; }
+    .modal h3 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+    .modal p { color: var(--text-2); font-size: 14.5px; line-height: 1.55; }
+    .modal-actions { display: flex; gap: 12px; width: 100%; }
+    .modal-actions .btn-ghost { flex: 1; padding: 15px; }
+    .modal-actions .btn-primary { flex: 1.5; padding: 15px; }
+
+    /* ---- PRELOADER ------------------------------------------------------- */
+    #preloader {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      clip-path: circle(150% at 50% 50%);
+      transition: clip-path 1.2s cubic-bezier(0.8, 0, 0.2, 1), background-color 1.2s cubic-bezier(0.8, 0, 0.2, 1);
+    }
+    .preloader-text {
+      font-size: clamp(22px, 5vw, 38px);
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-weight: 300;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      animation: splash-intro 2.5s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+    }
+    @keyframes splash-intro {
+      0% { opacity: 0; transform: scale(2); filter: blur(20px); }
+      100% { opacity: 1; transform: scale(1); filter: blur(0); }
+    }
+    #preloader.fast-zoom { clip-path: circle(0% at 50% 50%); background: transparent; }
+    #preloader.fast-zoom .preloader-text {
+      transform: scale(10);
+      opacity: 0;
+      transition: transform .8s cubic-bezier(0.8, 0, 0.2, 1), opacity .8s cubic-bezier(0.8, 0, 0.2, 1);
+    }
+
+    /* ---- SCROLLBARS ------------------------------------------------------ */
     #bubbles-container, #final-transcription, #screen-ended {
       scrollbar-width: thin;
       scrollbar-color: rgba(255,76,57,0.6) transparent;
@@ -150,535 +837,68 @@
       border: 2px solid transparent;
       background-clip: padding-box;
     }
-    #bubbles-container::-webkit-scrollbar-thumb:hover,
-    #final-transcription::-webkit-scrollbar-thumb:hover,
-    #screen-ended::-webkit-scrollbar-thumb:hover { background: #ff4c39; background-clip: padding-box; }
-    body.light-mode #bubbles-container,
-    body.light-mode #final-transcription,
-    body.light-mode #screen-ended { scrollbar-color: rgba(255,76,57,0.7) transparent; }
-
-    #screen-active .timer-container {
-      position: absolute;
-      top: 140px;
-      right: 40px;
-      width: 45%;
-      max-width: 550px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    #screen-active .controls-container {
-      position: absolute;
-      bottom: 100px;
-      right: 0;
-      width: 45%;
-      max-width: 550px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    /* CSS ANIMATIONS */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(24px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Agent replies "emerge from the orb": start small/blurred near the orb (left),
-       then settle into the transcript. */
-    @keyframes orbEmerge {
-      0%   { opacity: 0; transform: translateX(-180px) translateY(30px) scale(0.35); filter: blur(8px); }
-      55%  { opacity: 1; filter: blur(0); }
-      100% { opacity: 1; transform: translateX(0) translateY(0) scale(1); filter: blur(0); }
-    }
-
-    button {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    button:active {
-      transform: scale(0.95);
-    }
-    
-    button:focus-visible, a:focus-visible {
-      outline: 2px solid #ff4c39;
-      outline-offset: 4px;
-    }
-    
-    .glass-card {
-      background: rgba(255, 255, 255, 0.03);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 24px;
-    }
-
-    /* The contact modal uses a SOLID card (no backdrop blur) so opening it while
-       the agent is speaking never spikes the compositor and glitches the audio. */
-    #collect-modal .glass-card {
-      background: #0D0D0D;
-      backdrop-filter: none;
-    }
-    body.light-mode #collect-modal .glass-card {
-      background: #FFFFFF;
-    }
-
-    /* HEADER STYLES
-       Fixed placement that is identical on every screen size, resize, and device,
-       so the logo and theme toggle never shift. Do not override this in media
-       queries. */
-    .header-wrapper {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      padding: 24px 28px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 100;
-      pointer-events: none;
-      /* Scrim so scrolling content passing under the fixed logo / toggle is masked
-         (fades to transparent, invisible over the plain background at rest). */
-      background: linear-gradient(to bottom, var(--bg) 55%, transparent);
-    }
-
-    .header-logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      pointer-events: all;
-      transition: opacity 0.3s;
-    }
-    .header-logo:hover {
-        opacity: 0.8;
-    }
-
-    .logo-shape {
-      width: 52px;
-      height: 24px;
-      background: #ff4c39;
-      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 24'%3E%3Cpath d='M12 24C18.6274 24 24 18.6274 24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24ZM32 24C38.6274 24 44 18.6274 44 12C44 5.37258 38.6274 0 32 0C25.3726 0 20 5.37258 20 12C20 18.6274 25.3726 24 32 24Z'/%3E%3C/svg%3E");
-      mask-size: contain;
-      mask-repeat: no-repeat;
-      mask-position: center;
-      transition: background-color 0.5s;
-    }
-
-    .nav-bar-pill {
-      background: #0D0D0D;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 100px;
-      padding: 8px 10px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      pointer-events: all;
-      backdrop-filter: blur(20px);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
-
-    .nav-link {
-      color: #71717A;
-      text-decoration: none;
-      font-size: 15px;
-      font-weight: 700;
-      padding: 10px 18px;
-      border-radius: 100px;
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .nav-link:hover {
-      color: white;
-      background: rgba(255,255,255,0.06);
-    }
-    .nav-link.active {
-      color: white;
-      background: rgba(255,255,255,0.08);
-    }
-
-    .theme-toggle-btn {
-      width: 52px;
-      height: 52px;
-      border-radius: 18px;
-      background: #0D0D0D;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      cursor: pointer;
-      pointer-events: all;
-      backdrop-filter: blur(20px);
-      transition: all 0.3s;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
-    .theme-toggle-btn:hover {
-      background: rgba(255,255,255,0.08);
-      border-color: rgba(255,255,255,0.2);
-    }
-
-    .iklipse-noise-text {
-      color: #71717A;
-      font-size: 15px;
-      font-weight: 500;
-      letter-spacing: 0.05em;
-      pointer-events: none;
-      transition: color 1.2s;
-    }
-
-    /* PRELOADER / SPLASH SCREEN */
-    #preloader {
-      position: fixed;
-      inset: 0;
-      background: #000000;
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      transition: all 1.2s cubic-bezier(0.8, 0, 0.2, 1);
-      clip-path: circle(150% at 50% 50%);
-    }
-    
-    .preloader-text {
-      font-size: 38px;
-      font-family: 'Playfair Display', serif;
-      font-style: italic;
-      font-weight: 300;
-      letter-spacing: -0.01em;
-      color: white;
-      text-transform: none;
-      transform: scale(1.5);
-      animation: splash-intro 2.5s cubic-bezier(0.2, 0, 0.2, 1) forwards;
-    }
-
-    @keyframes splash-intro {
-      0% {
-        opacity: 0;
-        transform: scale(2);
-        filter: blur(20px);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-        filter: blur(0px);
-      }
-    }
-
-    #preloader.fast-zoom {
-      clip-path: circle(0% at 50% 50%);
-      background: rgba(0,0,0,0);
-    }
-    #preloader.fast-zoom .preloader-text {
-      transform: scale(10);
-      opacity: 0;
-      transition: all 0.8s cubic-bezier(0.8, 0, 0.2, 1);
-    }
 
     /* ============================================================
-       SEMANTIC THEME TOKENS
-       Dark is the source of truth. Light is its counterpart, same roles,
-       same hierarchy/weight, rebalanced for a light canvas (NOT inverted).
-       Depth: dark = lighter surfaces + subtle borders; light = raised
-       surfaces + soft shadows + balanced borders.
+       RESPONSIVE
        ============================================================ */
-    :root {
-      /* Dark reference (dark components use inline values; tokens document the system) */
-      --bg: #000000;
-      --surface: rgba(255,255,255,0.03);   /* raised surface  */
-      --surface-2: rgba(255,255,255,0.05); /* elevated        */
-      --overlay: #0D0D0D;                  /* modal/tooltip   */
-      --border: rgba(255,255,255,0.08);
-      --border-strong: rgba(255,255,255,0.14);
-      --divider: rgba(255,255,255,0.06);
-      --text: #FFFFFF;        /* primary   */
-      --text-2: #A1A1AA;      /* secondary */
-      --text-muted: #71717A;  /* muted     */
-      --text-faint: #52525B;  /* faint     */
-      --accent: #ff4c39;
-      --user-tint: rgba(99,102,241,0.05);
-      --user-border: rgba(99,102,241,0.10);
-      --user-shadow: none;
-      --shadow-sm: none;
-      --shadow-md: none;
-      --shadow-lg: none;
-    }
-
-    /* LIGHT THEME, token counterpart of the dark reference */
-    body.light-mode {
-      --bg: #F4F4F5;                       /* page (not pure white)     */
-      --surface: #FFFFFF;                  /* raised surface            */
-      --surface-2: #FFFFFF;                /* elevated                  */
-      --overlay: #FFFFFF;                  /* modal/tooltip/popover     */
-      --border: rgba(24,24,27,0.10);
-      --border-strong: rgba(24,24,27,0.16);
-      --divider: rgba(24,24,27,0.08);
-      --text: #18181B;        /* primary (not pure black) */
-      --text-2: #52525B;      /* secondary */
-      --text-muted: #71717A;  /* muted     */
-      --text-faint: #A1A1AA;  /* faint     */
-      --accent: #ff4c39;
-      --user-tint: #EEF0FE;                /* indigo tint, mirrors dark user bubble */
-      --user-border: rgba(99,102,241,0.22);
-      --user-shadow: none;   /* bubbles repeat + sit over animating canvas, border only */
-      /* Depth via soft shadows (light only). Small blur radii = cheap paint over the
-         per-frame WebGL canvas. Large blur (60px) re-rasterizes every frame → slow. */
-      --shadow-sm: 0 2px 8px rgba(24,24,27,0.06);
-      --shadow-md: 0 6px 16px rgba(24,24,27,0.08);
-      --shadow-lg: 0 12px 28px rgba(24,24,27,0.12);
-
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    body.light-mode .bg-grid {
-      background-image: radial-gradient(rgba(24,24,27,0.22) 1.2px, transparent 1.2px);
-      mask-image: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), black 0%, transparent 75%);
-    }
-    body.light-mode .bg-mesh {
-      opacity: 0.05;
-      background-image:
-        linear-gradient(45deg, rgba(24,24,27,0.12) 1.2px, transparent 1.2px),
-        linear-gradient(-45deg, rgba(24,24,27,0.12) 1.2px, transparent 1.2px);
-    }
-    body.light-mode .logo-shape { background: var(--accent); }
-
-    /* Pill / control surfaces (nav, theme toggle), same elevation both themes */
-    body.light-mode .nav-bar-pill {
-      background: var(--surface);
-      border-color: var(--border-strong);
-      box-shadow: var(--shadow-md);
-    }
-    body.light-mode .nav-link { color: var(--text-2); }
-    body.light-mode .nav-link:hover,
-    body.light-mode .nav-link.active {
-      color: var(--text);
-      background: rgba(24,24,27,0.05);
-    }
-    body.light-mode .theme-toggle-btn {
-      background: var(--surface);
-      border-color: var(--border-strong);
-      color: var(--text);
-      box-shadow: var(--shadow-sm);
-    }
-    body.light-mode .iklipse-noise-text { color: var(--text-2); }
-
-    /* Elevated card (report / modal card) */
-    body.light-mode .glass-card {
-      background: var(--surface);
-      border-color: var(--border);
-      box-shadow: var(--shadow-lg);
-    }
-    body.light-mode .glass-card div[style*="background:rgba(255,255,255,0.06)"] {
-      background: var(--divider) !important;   /* dividers inside the card */
-    }
-
-    /* Chat bubbles, agent = neutral surface, user = indigo tint (mirrors dark) */
-    .bubble p { transition: color 1.2s; }
-    body.light-mode .bubble.agent {
-      background: var(--surface);
-      border-color: var(--border);
-      box-shadow: none;   /* repeats per message over animating canvas, border only */
-    }
-    body.light-mode .bubble.user {
-      background: var(--user-tint);
-      border-color: var(--user-border);
-      box-shadow: var(--user-shadow);
-    }
-    body.light-mode .bubble.agent p,
-    body.light-mode .bubble.user p { color: var(--text) !important; }
-
-    /* Text hierarchy, mirror dark's primary/secondary (never flatten to black) */
-    body.light-mode h2,
-    body.light-mode #timer,
-    body.light-mode #final-duration,
-    body.light-mode #confirmation-modal h3,
-    body.light-mode #screen-ended span:not(.material-symbols-outlined) {
-      color: var(--text) !important;
-    }
-    body.light-mode #screen-ended p,
-    body.light-mode #screen-idle p,
-    body.light-mode #export-container p,
-    body.light-mode #confirmation-modal p,
-    body.light-mode #final-transcription,
-    body.light-mode #final-summary {
-      color: var(--text-2) !important;
-    }
-
-    /* Inputs */
-    body.light-mode #export-input-pill,
-    body.light-mode #collect-input-pill {
-      background: rgba(24,24,27,0.04) !important;
-      border-color: var(--border) !important;
-    }
-    body.light-mode #export-field,
-    body.light-mode #collect-field { color: var(--text) !important; }
-    body.light-mode #export-field::placeholder,
-    body.light-mode #collect-field::placeholder { color: var(--text-muted) !important; }
-
-    /* Kill Chrome's autofill background; base = dark, light overrides text colour */
-    #export-field:-webkit-autofill,
-    #export-field:-webkit-autofill:hover,
-    #export-field:-webkit-autofill:focus,
-    #export-field:-webkit-autofill:active {
-      -webkit-text-fill-color: #ffffff;
-      -webkit-box-shadow: 0 0 0 1000px transparent inset;
-      box-shadow: 0 0 0 1000px transparent inset;
-      caret-color: #ffffff;
-      transition: background-color 9999s ease-in-out 0s;
-    }
-    body.light-mode #export-field:-webkit-autofill,
-    body.light-mode #export-field:-webkit-autofill:hover,
-    body.light-mode #export-field:-webkit-autofill:focus,
-    body.light-mode #export-field:-webkit-autofill:active {
-      -webkit-text-fill-color: #18181B;
-      caret-color: #18181B;
-    }
-
-    /* Overlay: confirmation modal */
-    body.light-mode #confirmation-modal {
-      background: rgba(244,244,245,0.6) !important;   /* frosted light scrim */
-    }
-    body.light-mode #confirmation-modal button[onclick="cancelEndCall()"] {
-      background: rgba(24,24,27,0.05) !important;
-      border-color: var(--border) !important;
-      color: var(--text-2) !important;
-    }
-
-    /* Accent + primary action button */
-    body.light-mode #speaking-status {
-      color: var(--accent);
-      text-shadow: 0 2px 4px rgba(255,76,57,0.10);
-    }
-    body.light-mode #start-btn {
-      background: var(--surface);
-      border-color: var(--border-strong);
-      box-shadow: var(--shadow-lg);
-    }
-    body.light-mode #start-btn .material-symbols-outlined { color: var(--text) !important; }
-
-    /* CUSTOM TOOLTIP SYSTEM */
-    [data-tooltip] {
-      position: relative;
-    }
-    [data-tooltip]::after {
-      content: attr(data-tooltip);
-      position: absolute;
-      bottom: calc(100% + 12px);
-      left: 50%;
-      transform: translateX(-50%) translateY(10px);
-      padding: 8px 14px;
-      background: #09090B;
-      color: #FFFFFF;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      border-radius: 10px;
-      white-space: nowrap;
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      border: 1px solid rgba(255,255,255,0.1);
-      z-index: 1000;
-      font-family: 'Excon', sans-serif;
-    }
-    body.light-mode [data-tooltip]::after {
-      background: var(--overlay);
-      color: var(--text);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow-lg);
-    }
-    [data-tooltip]:hover::after {
-      opacity: 1;
-      visibility: visible;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    /* ============================================================
-       RESPONSIVE, phones & tablets
-       Desktop = orb shifted left + a 45% chat panel on the right.
-       On narrow screens that split can't breathe, so we STACK:
-       the orb sits small up top (positioned from JS) and the chat /
-       timer / controls span the full width beneath it.
-       ============================================================ */
-    @media (max-width: 768px) {
-      /* Header (logo + theme toggle) stays fixed at the same spot on every screen,
-         so it never shifts. No responsive overrides for it here. */
-      .content-max-width { max-width: 100%; }
-
-      /* Active call: full-width stacked layout */
-      #bubbles-container {
-        top: 43%;
-        right: 0;
-        left: 0;
-        width: 100%;
-        max-width: 100%;
-        bottom: 168px;
-        padding: 0 20px;
+    /* Portrait / narrow: stack the orb above a full-width panel. */
+    @media (max-aspect-ratio: 6/5) {
+      .call-panel {
+        top: clamp(190px, 36vh, 400px);
+        bottom: calc(clamp(14px, 3.5vh, 40px) + var(--safe-b));
+        left: calc(var(--edge) + var(--safe-l));
+        right: calc(var(--edge) + var(--safe-r));
+        width: auto;
+        max-width: 640px;
+        margin: 0 auto;
       }
-      #screen-active .timer-container {
-        top: 86px;
-        right: 0;
-        left: 0;
-        width: 100%;
-      }
-      #screen-active .controls-container {
-        bottom: 44px;
-        right: 0;
-        left: 0;
-        width: 100%;
-      }
+      /* the orb is above: agent bubbles drop in from it */
+      .bubble.agent { transform-origin: left top; animation-name: agentInDown; }
+    }
 
-      /* Idle: lift the connect button off the bottom edge */
-      #screen-idle .content-max-width > div { bottom: 88px; }
+    /* Short landscape (phones on their side): tighter panel, controls in a row. */
+    @media (max-height: 520px) and (min-aspect-ratio: 6/5) {
+      .call-panel {
+        top: calc(var(--edge) + var(--safe-t) + 54px);
+        bottom: calc(10px + var(--safe-b));
+        gap: 8px;
+      }
+      .timer-pill { padding: 6px 14px; font-size: 13px; }
+      .call-controls { flex-direction: row; gap: 16px; }
+      .end-btn { width: 54px; height: 54px; }
+      .end-btn .material-symbols-outlined { font-size: 24px; }
+      .bubble { padding: 10px 14px; }
+      .bubble p { font-size: 14px; line-height: 1.5; }
+      .start-btn { width: 68px; height: 68px; }
+      #screen-ended { padding-top: calc(var(--edge) + var(--safe-t) + 60px); }
+    }
 
-      /* Report screen */
-      #screen-ended { padding: 72px 0; }
-      .preloader-text { font-size: 26px; }
+    /* Big monitors: wider content and chat, slightly larger text. */
+    @media (min-width: 1900px) {
+      :root { --content-max: 1760px; --panel-w: 700px; }
+      .bubble p { font-size: 17px; }
+      .timer-pill { font-size: 17px; }
+    }
+
+    @media (max-width: 600px) {
+      .input-pill input { font-size: 16px; }   /* stops iOS zooming into the field */
     }
 
     @media (max-width: 480px) {
-      #bubbles-container { top: 41%; bottom: 150px; padding: 0 14px; }
-      .bubble { max-width: 90% !important; }
-
-      #screen-active .controls-container { bottom: 34px; }
-      #screen-active .controls-container button { width: 68px !important; height: 68px !important; }
-
-      #start-btn { width: 74px !important; height: 74px !important; }
-
-      #screen-ended h2 { font-size: 26px !important; }
-      #screen-ended .glass-card { padding: 22px !important; }
-      #export-options { flex-wrap: wrap; gap: 14px !important; }
-      .preloader-text { font-size: 22px; }
+      #theme-toggle { width: 42px; height: 42px; }
+      .float-logo { height: 42px; }
+      .logo-shape { width: 46px; height: 21px; }
+      .bubble { max-width: 90%; padding: 12px 15px; }
+      .bubble p { font-size: 14.5px; }
+      .end-btn { width: 66px; height: 66px; }
+      .start-btn { width: 76px; height: 76px; }
+      .report-card { border-radius: 20px; }
     }
 
-    /* Short / landscape phones: keep the report scrollable, trim top gap */
-    @media (max-height: 560px) {
-      #screen-ended { padding: 48px 0; }
-      #screen-active .timer-container { top: 70px; }
-    }
-
-    /* Typewriter caret, blinks while Ikli's words stream in, in step with the
-       voice; removed the moment the line finishes. */
-    .typing-cursor {
-      display: inline-block;
-      width: 2px;
-      height: 1.05em;
-      margin-left: 1px;
-      background: currentColor;
-      border-radius: 1px;
-      vertical-align: -0.12em;
-      opacity: 0.8;
-      animation: tw-blink 1s steps(1, end) infinite;
-    }
-    @keyframes tw-blink { 50% { opacity: 0; } }
     @media (prefers-reduced-motion: reduce) {
-      .typing-cursor { animation: none; }
+      .start-btn::before, .live-dot { animation: none; }
+      .entering [data-enter], .bubble.agent, .bubble.user, .w-in, .w-land,
+      .modal.open, .modal.open .modal-card { animation: none; }
     }
   </style>
 </head>
@@ -687,17 +907,14 @@
     <div class="preloader-text">iklipse the noise</div>
   </div>
 
-  <div class="header-wrapper">
-    <a href="https://iklipseworld.com/" class="header-logo" title="IKLIPSE WORLD" aria-label="Iklipse Home">
-      <div class="logo-shape"></div>
-    </a>
-
-    <div style="display: flex; align-items: center; gap: 24px;">
-      <button class="theme-toggle-btn" onclick="toggleTheme()" data-tooltip="Toggle appearance mode" aria-label="Toggle dark and light theme">
-        <span class="material-symbols-outlined" style="font-size: 22px;" aria-hidden="true">light_mode</span>
-      </button>
-    </div>
-  </div>
+  <!-- Floating controls (no header bar) -->
+  <a href="https://iklipseworld.com/" class="float-logo" title="IKLIPSE WORLD" aria-label="Iklipse Home">
+    <span class="logo-shape"></span>
+  </a>
+  <button id="theme-toggle" type="button" onclick="toggleTheme()" data-tooltip="Toggle appearance" aria-label="Toggle dark and light theme">
+    <span class="material-symbols-outlined icon-sun" aria-hidden="true">light_mode</span>
+    <span class="material-symbols-outlined icon-moon" aria-hidden="true">dark_mode</span>
+  </button>
 
   <div class="bg-grid"></div>
   <div class="bg-mesh"></div>
@@ -705,263 +922,196 @@
   <canvas id="orb-canvas"></canvas>
 
   <script>
-    // Mouse tracking for grid glow and orb
+    // Pointer tracking for the grid glow and the orb's tilt / hover.
     let mouseX = 0;
     let mouseY = 0;
     let targetOrbMouseX = 0;
     let targetOrbMouseY = 0;
 
-    document.addEventListener('mousemove', (e) => {
+    document.addEventListener('pointermove', (e) => {
       const x = (e.clientX / window.innerWidth) * 100;
       const y = (e.clientY / window.innerHeight) * 100;
       document.body.style.setProperty('--mouse-x', `${x}%`);
       document.body.style.setProperty('--mouse-y', `${y}%`);
+      if (e.pointerType !== 'mouse') return;   // touch would leave the orb stuck "hovered"
 
-      // Orb mouse interaction
       targetOrbMouseX = (e.clientX / window.innerWidth - 0.5) * 0.4;
       targetOrbMouseY = (e.clientY / window.innerHeight - 0.5) * 0.4;
-
-      // Update normalized device coordinates for raycasting
+      // Normalized device coordinates for raycasting
       mouseVector.x = (e.clientX / window.innerWidth) * 2 - 1;
       mouseVector.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    });
+    }, { passive: true });
 
-    // Handle Preloader
+    // Preloader
     window.addEventListener('load', () => {
       const preloader = document.getElementById('preloader');
       setTimeout(() => {
         preloader.classList.add('fast-zoom');
-        setTimeout(() => {
-          preloader.style.visibility = 'hidden';
-        }, 1200);
-      }, 2000); // Show for 2s then zoom fast
+        setTimeout(() => { preloader.style.visibility = 'hidden'; }, 1200);
+      }, 2000); // show for 2s, then zoom out fast
     });
   </script>
 
   <!-- CONFIRMATION DIALOG -->
-  <div class="ui-layer" id="confirmation-modal" style="display:none; z-index: 200; backdrop-filter: blur(8px); background: rgba(0,0,0,0.4);">
-    <div class="glass-card" style="padding: 40px; max-width: 400px; width: 90%; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px;">
-      <div style="background: rgba(255, 76, 57, 0.1); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 76, 57, 0.2);">
-        <span class="material-symbols-outlined" style="color: #ff4c39; font-size: 32px;">logout</span>
-      </div>
+  <div class="ui-layer modal" id="confirmation-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="modal-card">
+      <div class="modal-icon"><span class="material-symbols-outlined" aria-hidden="true">logout</span></div>
       <div>
-        <h3 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">End Session?</h3>
-        <p style="color: #71717A; font-size: 15px; line-height: 1.5;">This will terminate the current voice link and finalize your interaction data.</p>
+        <h3 id="confirm-title">End Session?</h3>
+        <p>This will terminate the current voice link and finalize your interaction data.</p>
       </div>
-      <div style="display: flex; gap: 12px; width: 100%;">
-        <button onclick="cancelEndCall()" aria-label="Cancel and return to session" style="flex: 1; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #A1A1AA; font-weight: 600; font-family: 'Excon', sans-serif;">Cancel</button>
-        <button onclick="confirmEndSession()" aria-label="Confirm end session" style="flex: 1.5; padding: 16px; border-radius: 16px; background: #ff4c39; border: none; color: white; font-weight: 700; font-family: 'Excon', sans-serif; box-shadow: 0 8px 24px rgba(255,76,57,0.25);">End Session</button>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="cancelEndCall()" aria-label="Cancel and return to session">Cancel</button>
+        <button class="btn-primary" onclick="confirmEndSession()" aria-label="Confirm end session">End Session</button>
       </div>
     </div>
   </div>
 
   <!-- BOOKING FORM (appears mid-call; collects a phone number or an email) -->
-  <div class="ui-layer" id="collect-modal" style="display:none; z-index: 210; background: rgba(0,0,0,0.6);">
-    <div class="glass-card" style="padding: 36px; max-width: 420px; width: 90%; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px;">
-      <div style="background: rgba(255, 76, 57, 0.1); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 76, 57, 0.2);">
-        <span id="collect-icon" class="material-symbols-outlined" style="color: #ff4c39; font-size: 30px;">alternate_email</span>
-      </div>
+  <div class="ui-layer modal" id="collect-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="collect-title">
+    <div class="modal-card">
+      <div class="modal-icon"><span id="collect-icon" class="material-symbols-outlined" aria-hidden="true">alternate_email</span></div>
       <div>
-        <h3 id="collect-title" style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">Where should we send it?</h3>
-        <p id="collect-hint" style="color: #71717A; font-size: 14px; line-height: 1.5;">Enter your phone number, including your country code, or your email address.</p>
+        <h3 id="collect-title">Where should we send it?</h3>
+        <p id="collect-hint">Enter your phone number, including your country code, or your email address.</p>
       </div>
-      <div id="collect-input-pill" style="display:flex; align-items:center; padding:6px 6px 6px 18px; border-radius:18px; width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14);">
+      <div id="collect-input-pill" class="input-pill">
         <input id="collect-field" type="text" inputmode="text" autocomplete="on" placeholder="Phone number or email" aria-label="Phone number or email"
-          style="flex:1; background:transparent; border:none; color:inherit; font-family:inherit; outline:none; font-size:15px;"
           onkeydown="if(event.key==='Enter'){submitCollectForm();}">
       </div>
-      <div style="display:flex; gap:12px; width:100%;">
-        <button onclick="closeCollectForm()" aria-label="Cancel" style="flex:1; padding:14px; border-radius:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#A1A1AA; font-weight:600; font-family:'Excon', sans-serif;">Cancel</button>
-        <button onclick="submitCollectForm()" aria-label="Submit" style="flex:1.5; padding:14px; border-radius:14px; background:#ff4c39; border:none; color:white; font-weight:700; font-family:'Excon', sans-serif; box-shadow:0 8px 24px rgba(255,76,57,0.25);">Send</button>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeCollectForm()" aria-label="Cancel">Cancel</button>
+        <button class="btn-primary" onclick="submitCollectForm()" aria-label="Submit">Send</button>
       </div>
     </div>
   </div>
 
   <!-- SCREEN 1: IDLE -->
-  <div class="ui-layer" id="screen-idle">
-    <div class="content-max-width">
-      <!-- control area -->
-      <div style="position:absolute;bottom:120px;width:100%;
-                  display:flex;flex-direction:column;align-items:center;gap:20px">
-        <button id="start-btn" onclick="startCall()" data-tooltip="Initialize voice link" aria-label="Start voice interaction" style="
-          width:84px;height:84px;border-radius:50%;
-          border:1px solid rgba(255,255,255,0.12);
-          background:rgba(255,255,255,0.04);
-          backdrop-filter:blur(10px);
-          display:flex;align-items:center;justify-content:center;
-          box-shadow:0 0 50px rgba(255,255,255,0.05);
-          transition:all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
-          font-family: 'Excon', 'Syne', sans-serif;">
-          <span class="material-symbols-outlined" 
-                style="color:white;font-size:32px" aria-hidden="true">mic</span>
-        </button>
-        <p style="font-size:14px;color:#71717A;font-weight:400;letter-spacing:0.05em;opacity:0.8;font-family: 'Excon', sans-serif;">Press to Connect</p>
-        <p id="connect-error" role="alert" style="display:none;max-width:320px;padding:0 16px;text-align:center;font-size:13px;line-height:1.5;color:#ff4c39;font-weight:600"></p>
-      </div>
+  <div class="ui-layer entering" id="screen-idle">
+    <div class="idle-cta" data-enter style="--d:2300ms">
+      <button id="start-btn" class="start-btn" onclick="startCall()" data-tooltip="Initialize voice link" aria-label="Start voice interaction">
+        <span class="material-symbols-outlined" aria-hidden="true">mic</span>
+      </button>
+      <p class="cta-label">Press to Connect</p>
+      <p id="connect-error" class="connect-error" role="alert"></p>
     </div>
   </div>
 
   <!-- SCREEN 2: ACTIVE CALL -->
   <div class="ui-layer" id="screen-active" style="display:none">
-    <div class="content-max-width">
-      <!-- session timer -->
-      <div class="timer-container">
-        <div class="glass-card" style="padding:10px 24px;border-radius:100px">
-          <span id="timer" style="font-size:16px;color:#A1A1AA;font-weight:700;
-                font-variant-numeric:tabular-nums">0:00</span>
-        </div>
+    <section class="call-panel" aria-label="Voice session">
+      <div class="timer-pill" data-enter style="--d:80ms">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span id="timer">0:00</span>
       </div>
 
       <!-- chat bubbles -->
-      <div id="bubbles-container" aria-live="polite"></div>
+      <div id="bubbles-container" aria-live="polite" data-enter style="--d:140ms"></div>
 
-      <!-- speaking status + mic -->
-      <div class="controls-container">
-        <p id="speaking-status" style="font-size:14px;color:#ff4c39;font-weight:600;
-           letter-spacing:0.2em;text-transform:uppercase;font-family:'Excon', sans-serif">Connecting</p>
-        <button onclick="endCall()" data-tooltip="End current session" aria-label="End session" style="
-          width:80px;height:80px;border-radius:50%;
-          border:1px solid rgba(255,76,57,0.3);
-          background:rgba(255,76,57,0.05);
-          backdrop-filter:blur(12px);
-          display:flex;align-items:center;justify-content:center;
-          box-shadow:0 0 50px rgba(255,76,57,0.1);
-          transition:all 0.4s ease;">
-          <span class="material-symbols-outlined" 
-                style="color:#ff4c39;font-size:32px" aria-hidden="true">call_end</span>
+      <!-- speaking status + end -->
+      <div class="call-controls" data-enter style="--d:200ms">
+        <p id="speaking-status" data-state="connecting">Connecting</p>
+        <button class="end-btn" onclick="endCall()" data-tooltip="End current session" aria-label="End session">
+          <span class="material-symbols-outlined" aria-hidden="true">call_end</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- SCREEN 3: ENDED -->
+  <div class="ui-layer" id="screen-ended" style="display:none">
+    <div class="report-wrap">
+
+      <!-- Loading: shown until the AI summary is fully generated. -->
+      <div id="report-loading" data-enter>
+        <div class="report-spinner" aria-hidden="true"></div>
+        <p>Generating your session report...</p>
+      </div>
+
+      <!-- Report: revealed only once the summary is ready. -->
+      <div id="report-content">
+        <h2 class="report-title" data-enter style="--d:0ms">Session Report</h2>
+        <p class="report-sub" data-enter style="--d:60ms">Insight extraction complete. You can export your session data below.</p>
+
+        <!-- report card -->
+        <div class="report-card" data-enter style="--d:120ms">
+          <div class="row-split">
+            <div class="row-head">
+              <span class="material-symbols-outlined" aria-hidden="true">timer</span>
+              <span class="label">Duration</span>
+            </div>
+            <span id="final-duration">0:00</span>
+          </div>
+
+          <div class="divider"></div>
+
+          <div>
+            <div class="row-head">
+              <span class="material-symbols-outlined" aria-hidden="true">subject</span>
+              <span class="label">Transcription</span>
+            </div>
+            <p id="final-transcription"></p>
+          </div>
+
+          <div class="divider"></div>
+
+          <div>
+            <div class="row-head">
+              <span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>
+              <span class="label">Summary</span>
+            </div>
+            <p id="final-summary"></p>
+          </div>
+        </div>
+
+        <!-- Export Area -->
+        <div id="export-container" data-enter style="--d:180ms">
+          <div id="export-options">
+            <p class="export-label">Export via:</p>
+            <button onclick="showExportInput('whatsapp')" class="icon-btn" data-tooltip="WhatsApp" aria-label="Export via WhatsApp">
+              <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path fill="#25D366" d="M16.004 0h-.008C7.174 0 .002 7.174.002 16c0 3.5 1.128 6.744 3.05 9.38L1.05 31.05l5.86-1.874A15.9 15.9 0 0 0 16.004 32C24.826 32 32 24.826 32 16S24.826 0 16.004 0z"/><path fill="#fff" d="M25.31 22.6c-.386 1.09-1.92 1.994-3.142 2.258-.836.178-1.928.32-5.606-1.204-4.706-1.95-7.736-6.732-7.972-7.042-.226-.31-1.902-2.532-1.902-4.83s1.174-3.428 1.648-3.912c.39-.398.99-.58 1.566-.58.186 0 .354.01.506.018.446.02.67.046.964.748.386.906 1.31 3.204 1.42 3.44.112.236.224.554.058.864-.156.32-.294.46-.53.708-.236.248-.46.44-.696.706-.216.234-.46.486-.198.93.262.444 1.166 1.92 2.504 3.11 1.726 1.534 3.144 2.008 3.612 2.204.35.146.766.112 1.02-.16.322-.35.72-.93 1.124-1.502.286-.408.648-.458 1.028-.316.386.138 2.44 1.15 2.86 1.36.42.21.7.31.802.484.1.174.1 1.002-.286 2.092z"/></svg>
+            </button>
+            <button onclick="showExportInput('email')" class="icon-btn" data-tooltip="Email" aria-label="Export via Email">
+              <span class="material-symbols-outlined" aria-hidden="true">mail</span>
+            </button>
+          </div>
+
+          <!-- Dynamic Inputs -->
+          <div id="export-input-area">
+            <div id="export-input-pill" class="input-pill">
+              <input id="export-field" type="text" placeholder="" aria-label="Phone number or email" onkeydown="if(event.key==='Enter'){submitExport();}">
+              <button class="btn-primary" onclick="submitExport()">Send</button>
+            </div>
+            <button class="link-btn" onclick="resetExportOptions()">← Back to options</button>
+          </div>
+
+          <p id="export-success"></p>
+        </div>
+
+        <!-- start again -->
+        <button class="link-btn restart-btn" onclick="resetCall()" aria-label="Start a new session" data-enter style="--d:240ms">
+          ← Start New Session
         </button>
       </div>
     </div>
   </div>
 
-  <!-- SCREEN 3: ENDED -->
-  <div class="ui-layer" id="screen-ended" style="display:none;overflow-y:auto;pointer-events:auto;padding:112px 0 48px">
-    <div style="max-width:500px;width:90%;display:flex;flex-direction:column;align-items:center">
-
-      <!-- Loading: shown until the AI summary is fully generated. -->
-      <div id="report-loading" style="display:flex;flex-direction:column;align-items:center;gap:18px;padding:70px 0">
-        <div class="report-spinner" aria-hidden="true"></div>
-        <p style="font-size:15px;color:#71717A;font-weight:400;letter-spacing:0.02em">Generating your session report...</p>
-      </div>
-
-      <!-- Report: revealed only once the summary is ready. -->
-      <div id="report-content" style="display:none;width:100%;flex-direction:column;align-items:center">
-
-      <h2 style="font-size:32px;font-weight:800;
-                margin-top:0;text-align:center;letter-spacing:-0.02em">
-        Session Report
-      </h2>
-      <p style="font-size:16px;color:#71717A;margin-top:12px;text-align:center;font-weight:300">
-        Insight extraction complete. You can export your session data below.
-      </p>
-
-      <!-- report card -->
-      <div class="glass-card" style="width:100%;margin-top:40px;padding:32px;border-radius:24px;text-align:left;display:flex;flex-direction:column;gap:24px">
-        <!-- Stats Row -->
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="display:flex;align-items:center;gap:12px">
-            <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">timer</span>
-            <span style="font-weight:600;font-size:14px">Duration</span>
-          </div>
-          <span id="final-duration" style="font-weight:700;font-variant-numeric:tabular-nums;font-size:14px">0:00</span>
-        </div>
-
-        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
-
-        <!-- Transcription -->
-        <div>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-            <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">subject</span>
-            <span style="font-weight:600;font-size:14px">Transcription</span>
-          </div>
-          <p id="final-transcription" style="font-size:13px;color:#A1A1AA;line-height:1.6;max-height:100px;overflow-y:auto;padding-right:8px;font-weight:400"></p>
-        </div>
-
-        <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
-
-        <!-- Summary -->
-        <div>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-            <span class="material-symbols-outlined" style="color:#ff4c39;font-size:20px">auto_awesome</span>
-            <span style="font-weight:600;font-size:14px">Summary</span>
-          </div>
-          <p id="final-summary" style="font-size:13px;color:#A1A1AA;font-style:italic;line-height:1.6;font-weight:400"></p>
-        </div>
-      </div>
-
-      <!-- Export Area -->
-      <div id="export-container" style="width:100%;max-width:480px;margin-top:32px;display:flex;flex-direction:column;align-items:center">
-        <div id="export-options" style="display:flex;justify-content:center;gap:20px;align-items:center">
-          <p style="font-size:12px;color:#71717A;font-weight:600;letter-spacing:0.1em;text-transform:uppercase">Export via:</p>
-          <button onclick="showExportInput('whatsapp')" class="glass-card" data-tooltip="WhatsApp" style="width:56px;height:56px;border-radius:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Export via WhatsApp">
-            <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path fill="#25D366" d="M16.004 0h-.008C7.174 0 .002 7.174.002 16c0 3.5 1.128 6.744 3.05 9.38L1.05 31.05l5.86-1.874A15.9 15.9 0 0 0 16.004 32C24.826 32 32 24.826 32 16S24.826 0 16.004 0z"/><path fill="#fff" d="M25.31 22.6c-.386 1.09-1.92 1.994-3.142 2.258-.836.178-1.928.32-5.606-1.204-4.706-1.95-7.736-6.732-7.972-7.042-.226-.31-1.902-2.532-1.902-4.83s1.174-3.428 1.648-3.912c.39-.398.99-.58 1.566-.58.186 0 .354.01.506.018.446.02.67.046.964.748.386.906 1.31 3.204 1.42 3.44.112.236.224.554.058.864-.156.32-.294.46-.53.708-.236.248-.46.44-.696.706-.216.234-.46.486-.198.93.262.444 1.166 1.92 2.504 3.11 1.726 1.534 3.144 2.008 3.612 2.204.35.146.766.112 1.02-.16.322-.35.72-.93 1.124-1.502.286-.408.648-.458 1.028-.316.386.138 2.44 1.15 2.86 1.36.42.21.7.31.802.484.1.174.1 1.002-.286 2.092z"/></svg>
-          </button>
-          <button onclick="showExportInput('email')" class="glass-card" data-tooltip="Email" style="width:56px;height:56px;border-radius:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Export via Email">
-            <span class="material-symbols-outlined" style="color:#ff4c39">mail</span>
-          </button>
-        </div>
-
-        <!-- Dynamic Inputs -->
-        <div id="export-input-area" style="display:none;width:100%">
-          <div id="export-input-pill" style="display:flex;align-items:center;padding:6px 6px 6px 20px;border-radius:20px;width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14)">
-            <input id="export-field" type="text" placeholder="" aria-label="Phone number or email" onkeydown="if(event.key==='Enter'){submitExport();}" style="flex:1;background:transparent;border:none;color:inherit;font-family:inherit;outline:none;font-size:14px">
-            <button onclick="submitExport()" style="background:#ff4c39;border:none;padding:12px 24px;border-radius:14px;color:white;font-weight:700;cursor:pointer;font-family:inherit">Send</button>
-          </div>
-          <button onclick="resetExportOptions()" style="margin-top:16px;background:transparent;border:none;color:#71717A;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600">← Back to options</button>
-        </div>
-
-        <p id="export-success" style="display:none;margin-top:12px;color:#ff4c39;font-weight:600;font-size:14px;animation:fadeUp 0.4s ease forwards"></p>
-      </div>
-
-      <!-- start again -->
-      <button onclick="resetCall()" aria-label="Start a new session" style="
-        margin-top:40px;background:transparent;border:none;
-        font-family:'Excon', sans-serif;font-size:14px;color:#52525B;cursor:pointer;
-        font-weight:600;transition:all 0.2s"
-        onmouseover="this.style.color='#ff4c39'"
-        onmouseout="this.style.color='#52525B'">
-        ← Start New Session
-      </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- THREE.JS IMPLEMENTATION -->
+  <!-- THREE.JS ORB + APP LOGIC -->
   <script>
+    const root = document.documentElement;
+    const reduceMotionMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
     const canvas = document.getElementById('orb-canvas');
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas, antialias: true, alpha: true
-    });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
-    // Pull the camera back on small screens so the orb never overflows a
-    // narrow (portrait) viewport. Desktop keeps it closer.
-    const isMobile = () => window.innerWidth <= 768;
-    function applyResponsiveCamera() {
-      camera.position.z = isMobile() ? 11 : 8;
-    }
-    applyResponsiveCamera();
-
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0x404060, 1.0);
-    scene.add(ambientLight);
-    
-    const pointLight1 = new THREE.PointLight(0xffffff, 4, 30);
-    pointLight1.position.set(10, 10, 10);
-    scene.add(pointLight1);
-    
-    const pointLight2 = new THREE.PointLight(0xff4c39, 2, 30);
-    pointLight2.position.set(-10, -5, 5);
-    scene.add(pointLight2);
-
-    const pointLight3 = new THREE.PointLight(0x6366f1, 0, 20); // Reactive blue/indigo light
-    pointLight3.position.set(0, 5, -5);
-    scene.add(pointLight3);
+    // Fixed camera on every screen; the orb is sized and placed in pixels instead
+    // (see layoutOrb), so it always fits the free space next to / above the chat.
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 8;
 
     // Vertex Shader
     const vertexShader = `
@@ -1007,17 +1157,22 @@
         float fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 3.0);
         
         vec3 idle1 = mix(vec3(0.02, 0.02, 0.04), vec3(0.04, 0.04, 0.06), uTheme); 
-        vec3 idle2 = mix(vec3(0.08, 0.08, 0.12), vec3(0.1, 0.1, 0.15), uTheme); 
+        vec3 idle2 = mix(vec3(0.09, 0.08, 0.16), vec3(0.1, 0.1, 0.15), uTheme); 
         
         vec3 act1 = vec3(1.0, 0.298, 0.223); // Iklipse Orange #ff4c39
-        vec3 act2 = mix(vec3(1.0, 1.0, 1.0), vec3(0.08, 0.08, 0.1), uTheme);     
-        vec3 act3 = mix(vec3(0.0, 0.0, 0.0), vec3(0.03, 0.03, 0.05), uTheme);      
+        vec3 act2 = mix(vec3(1.0, 0.80, 0.70), vec3(0.08, 0.08, 0.1), uTheme);   // warm peach
+        vec3 act3 = mix(vec3(0.08, 0.01, 0.02), vec3(0.03, 0.03, 0.05), uTheme); // deep crimson shadow
         
         // Sentiment adjustments
         // uSentiment: 0.0 (Cool/Negative) -> 0.5 (Neutral) -> 1.0 (Positive/Warm)
-        vec3 sentimentWarm = vec3(1.0, 0.75, 0.1); // Vibrant Gold/Orange
-        vec3 sentimentCool = vec3(0.4, 0.1, 1.0);  // Vivid Purple/Indigo
-        vec3 sentimentColor = mix(sentimentCool, sentimentWarm, uSentiment);
+        // Three stops so the neutral middle stays a vivid brand colour (not a
+        // muddy indigo/coral average): caller indigo -> coral pink -> amber.
+        vec3 sentimentCool = vec3(0.39, 0.40, 0.95); // indigo #6366f1, the caller's bubble colour
+        vec3 sentimentMid  = vec3(1.0, 0.34, 0.38);  // hot coral pink, next to the brand #ff4c39
+        vec3 sentimentWarm = vec3(1.0, 0.56, 0.22);  // amber orange, the agent speaking
+        vec3 sentimentColor = uSentiment < 0.5
+          ? mix(sentimentCool, sentimentMid, uSentiment * 2.0)
+          : mix(sentimentMid, sentimentWarm, uSentiment * 2.0 - 1.0);
         
         float t = uTime * 0.2;
         float noise = sin(vWorldPosition.x * 2.0 + t) * cos(vWorldPosition.y * 2.0 + t);
@@ -1026,13 +1181,13 @@
         vec3 activeColor = mix(act1, act2, noise * 0.5 + 0.5);
         
         // Intensity of sentiment color on the orb surface increases with uState
-        float sentimentImpact = 0.3 + (uState * 0.4);
+        float sentimentImpact = 0.25 + (uState * 0.35);
         activeColor = mix(activeColor, sentimentColor, sentimentImpact);
-        activeColor = mix(activeColor, act3, sin(uTime * 0.4) * 0.5 + 0.5);
+        activeColor = mix(activeColor, act3, (sin(uTime * 0.4) * 0.5 + 0.5) * 0.45);
         
         vec3 finalColor = mix(idleColor, activeColor, uState);
         
-        vec3 glowBase = mix(vec3(1.0, 0.298, 0.223), vec3(0.05, 0.05, 0.1), 1.0 - uState);
+        vec3 glowBase = mix(vec3(1.0, 0.298, 0.223), vec3(0.10, 0.08, 0.22), 1.0 - uState);
         // In light theme, the glow base needs to be much darker for context
         glowBase = mix(glowBase, vec3(0.02, 0.02, 0.04), uTheme * (1.0 - uState) * 0.8);
         
@@ -1044,13 +1199,18 @@
         
         float specSize = mix(32.0, 20.0, uTheme); 
         float spec = pow(max(dot(reflect(vec3(-1.0, -1.0, -1.0), vNormal), viewDir), 0.0), specSize);
-        finalColor += vec3(1.0) * spec * mix(0.4, 0.6, uTheme) * (1.0 + uSentiment * 0.5);
-        
+        finalColor += vec3(1.0, 0.95, 0.9) * spec * mix(0.4, 0.6, uTheme) * (1.0 + uSentiment * 0.5);
+
+        // A touch more saturation once the call is live.
+        float luma = dot(finalColor, vec3(0.299, 0.587, 0.114));
+        finalColor = max(mix(vec3(luma), finalColor, 1.0 + 0.25 * uState), 0.0);
+
         gl_FragColor = vec4(finalColor, 0.9);
       }
     `;
 
-    const geometry = new THREE.SphereGeometry(2.2, 128, 128);
+    const ORB_R = 2.2;   // sphere radius in world units
+    const geometry = new THREE.SphereGeometry(ORB_R, 128, 128);
     const material = new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader,
@@ -1059,7 +1219,7 @@
         uIntensity: { value: 0.15 },
         uState:     { value: 0.0 },
         uSentiment: { value: 0.5 },
-        uTheme:     { value: 0.0 },
+        uTheme:     { value: root.classList.contains('light-mode') ? 1.0 : 0.0 },
       },
       transparent: true,
     });
@@ -1076,12 +1236,12 @@
     const glowMesh = new THREE.Mesh(glowGeo, glowMat);
     scene.add(glowMesh);
 
-    // Interaction Tools
+    // Interaction
     const raycaster = new THREE.Raycaster();
-    const mouseVector = new THREE.Vector2();
+    const mouseVector = new THREE.Vector2(10, 10);   // off-screen until a real mouse moves
     let isHoveringOrb = false;
 
-    // State management
+    // State
     let appState = 'idle';
     let targetIntensity = 0.15;
     let targetState = 0.0;
@@ -1089,30 +1249,111 @@
     let targetX = 0.0;
     let targetY = 0.0;
     let targetScale = 1.0;
+    let baseScale = 1.0;
+    let orbBaseY = 0.0;
+    let intensityBase = 0.15;
     let hoverScaleFactor = 1.0;
     let hoverGlowFactor = 1.0;
     let targetSentiment = 0.5;
+    let targetTheme = material.uniforms.uTheme.value;
+    let voiceEnv = 0;      // smoothed loudness of the agent's voice
+    let kick = 0;          // decaying beat added on every word
     let timerInterval = null;
     let seconds = 0;
 
-    // Global hook for sentiment control
     window.setOrbSentiment = (val) => {
       targetSentiment = THREE.MathUtils.clamp(val, 0, 1);
     };
 
-    // Place the orb for an active call. Desktop: shove it left so the chat
-    // panel sits on the right. Mobile: keep it centered, small, and up top so
-    // the full-width chat can stack beneath it (see the @media rules).
-    function positionOrbForCall() {
-      if (isMobile()) {
-        targetX = 0.0;
-        targetY = 2.6;
-        targetScale = 0.6;
+    // A word just left the orb: a short heartbeat kick.
+    window.__orbKick = (strength = 1) => {
+      if (reduceMotionMQ.matches) return;
+      kick = Math.min(1.5, kick + 0.55 * strength);
+    };
+
+    // ---- Layout: size and place the orb in pixels --------------------------
+    const contentMax = () => parseFloat(getComputedStyle(root).getPropertyValue('--content-max')) || 1320;
+    const stackMQ = window.matchMedia('(max-aspect-ratio: 6/5)');
+    const _size = new THREE.Vector2();
+    const _proj = new THREE.Vector3();
+
+    function viewSize() { return renderer.getSize(_size); }
+    function worldPerPx() {
+      const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
+      return (2 * halfH) / viewSize().y;
+    }
+    // fx = how far the shader's wobble pushes past the sphere radius in that state
+    function placeOrb(cx, cy, radiusPx, fx) {
+      const s = viewSize();
+      const k = worldPerPx();
+      targetX = (cx - s.x / 2) * k;
+      targetY = -(cy - s.y / 2) * k;
+      targetScale = (radiusPx * k) / (ORB_R * fx);
+    }
+    function layoutOrb() {
+      const { x: W, y: H } = viewSize();
+      if (appState === 'active') {
+        const panel = document.querySelector('.call-panel').getBoundingClientRect();
+        if (stackMQ.matches) {
+          // the free band above the chat
+          const band = panel.top;
+          placeOrb(W / 2, band * 0.55, Math.min(band * 0.36, W * 0.30), 1.4);
+        } else {
+          // the free band left of the chat
+          const left = Math.max(0, (W - contentMax()) / 2);
+          const bandW = panel.left - left;
+          placeOrb(left + bandW / 2, H * 0.5, Math.min(bandW * 0.36, H * 0.33), 1.4);
+        }
+      } else if (appState === 'ended') {
+        placeOrb(W / 2, H / 2, Math.min(W, H) * 0.22, 1.05);
       } else {
-        targetX = -3.5;
-        targetY = 0.0;
-        targetScale = 1.05;
+        placeOrb(W / 2, H / 2, Math.min(W * 0.40, H * 0.35), 1.05);
       }
+    }
+    layoutOrb();
+    baseScale = targetScale;
+    orbBaseY = targetY;
+    orb.position.set(targetX, targetY, 0);
+
+    // Where the orb is on screen (px) and how big; word flights start at its rim.
+    window.__orbScreen = () => {
+      const s = viewSize();
+      _proj.copy(orb.position).project(camera);
+      return {
+        x: (_proj.x + 1) / 2 * s.x,
+        y: (1 - _proj.y) / 2 * s.y,
+        r: (ORB_R * orb.scale.x) / worldPerPx(),
+      };
+    };
+
+    // ---- Screens & modals ------------------------------------------------
+    const SCREENS = ['screen-idle', 'screen-active', 'screen-ended'];
+    function replayClass(el, cls) {
+      el.classList.remove(cls);
+      void el.offsetWidth;   // restart the CSS animations
+      el.classList.add(cls);
+    }
+    function showScreen(id) {
+      for (const s of SCREENS) {
+        const el = document.getElementById(s);
+        if (s === id) {
+          el.style.display = 'flex';
+          replayClass(el, 'entering');
+        } else {
+          el.style.display = 'none';
+        }
+      }
+    }
+    function openModal(id) {
+      const m = document.getElementById(id);
+      m.style.display = 'flex';
+      replayClass(m, 'open');
+    }
+
+    function setStatusText(text) {
+      const el = document.getElementById('speaking-status');
+      el.textContent = text;
+      el.dataset.state = text.toLowerCase();
     }
 
     function startCall() {
@@ -1122,23 +1363,21 @@
       targetIntensity = 0.6;
       targetState = 1.0;
       targetRotSpeed = 0.012;
-      positionOrbForCall(); // desktop: shift left for split; mobile: small, up top
-      glowMat.color.setHex(0xff4c39);
-      
-      document.getElementById('screen-idle').style.display = 'none';
-      document.getElementById('screen-active').style.display = 'flex';
-      
+
+      showScreen('screen-active');
+      layoutOrb();   // after the panel is visible: the orb moves into the free space
+
       seconds = 0;
+      document.getElementById('timer').textContent = '0:00';
       timerInterval = setInterval(() => {
         seconds++;
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
-        document.getElementById('timer').textContent = m + ':' + String(s).padStart(2,'0');
+        document.getElementById('timer').textContent = m + ':' + String(s).padStart(2, '0');
       }, 1000);
 
       // Real voice pipeline: connect to LiveKit (see src/voice-agent.ts).
-      // Clears the demo bubbles; the agent greets on connect.
-      document.getElementById('speaking-status').textContent = 'Connecting';
+      setStatusText('Connecting');
       if (window.__voiceConnect) window.__voiceConnect();
     }
 
@@ -1153,7 +1392,6 @@
       clearInterval(timerInterval);
       window.__closeCollectFormUI();
       document.getElementById('confirmation-modal').style.display = 'none';
-      document.getElementById('screen-active').style.display = 'none';
       resetCall();
       const err = document.getElementById('connect-error');
       err.textContent = message || 'Voice connection failed.';
@@ -1167,8 +1405,8 @@
     };
 
     function endCall() {
-      // Show confirmation dialog instead of ending immediately
-      document.getElementById('confirmation-modal').style.display = 'flex';
+      // Ask first instead of ending immediately
+      openModal('confirmation-modal');
     }
 
     function cancelEndCall() {
@@ -1181,27 +1419,24 @@
       window.__closeCollectFormUI();
       if (window.__voiceDisconnect) window.__voiceDisconnect();
       appState = 'ended';
+      document.body.classList.add('is-ended');
       targetIntensity = 0.08;
       targetState = 0.0;
       targetRotSpeed = 0.001;
-      targetX = 0.0;
-      targetY = 0.0;
-      targetScale = 0.6;
-      glowMat.color.setHex(0xff4c39);
-      
+      layoutOrb();
+
       clearInterval(timerInterval);
       const m = Math.floor(seconds / 60);
       const s = seconds % 60;
-      document.getElementById('final-duration').textContent = m + ':' + String(s).padStart(2,'0');
-      
-      document.getElementById('screen-active').style.display = 'none';
+      document.getElementById('final-duration').textContent = m + ':' + String(s).padStart(2, '0');
+
       const endedEl = document.getElementById('screen-ended');
       const loadingEl = document.getElementById('report-loading');
       const contentEl = document.getElementById('report-content');
-      endedEl.style.display = 'flex';
       // Show the loader; keep the report hidden until the summary is ready.
-      if (loadingEl) loadingEl.style.display = 'flex';
-      if (contentEl) contentEl.style.display = 'none';
+      loadingEl.style.display = 'flex';
+      contentEl.style.display = 'none';
+      showScreen('screen-ended');
 
       // Show both export options (WhatsApp + Email); each pre-fills when picked.
       try { resetExportOptions(); } catch (e) {}
@@ -1210,10 +1445,10 @@
       const transcriptEl = document.getElementById('final-transcription');
       const summaryEl = document.getElementById('final-summary');
 
-      // Reveal the finished report and scroll it to the top so it's fully visible.
+      // Reveal the finished report (its sections rise in) scrolled to the top.
       const reveal = () => {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (contentEl) contentEl.style.display = 'flex';
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'flex';
         endedEl.scrollTop = 0;
       };
 
@@ -1226,7 +1461,7 @@
 
       // Render the real conversation.
       transcriptEl.innerHTML = turns
-        .map(t => `<strong style="color:#ff4c39">${escapeHtml(t.role)}:</strong> ${escapeHtml(t.text)}`)
+        .map(t => `<strong>${escapeHtml(t.role)}:</strong> ${escapeHtml(t.text)}`)
         .join('<br><br>');
 
       // Ask the backend (server-side Claude) for a real summary, then reveal.
@@ -1254,6 +1489,8 @@
       optionsArea.style.display = 'none';
       successMsg.style.display = 'none';
       inputArea.style.display = 'block';
+      inputArea.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 300, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
 
       if (method === 'whatsapp') {
         field.placeholder = "+1 234 567 8900 (Country Code + Number)";
@@ -1345,7 +1582,7 @@
       // Pre-fill with a contact given earlier THIS session (in-memory only, phone first).
       if (window.__ikliPhone) f.value = window.__ikliPhone;
       else if (window.__ikliEmail) f.value = window.__ikliEmail;
-      m.style.display = 'flex';
+      openModal('collect-modal');
       // Do NOT auto-focus: popping the mobile keyboard here triggers a viewport
       // resize (and a WebGL buffer realloc) that stutters the agent's speech. The
       // field is tappable, so the caller focuses it when ready.
@@ -1422,19 +1659,18 @@
 
       if (!ok) {
         // Keep the field (and what they typed) so they can fix it and retry.
-        successMsg.style.color = '#ff4c39';
+        successMsg.dataset.kind = 'error';
         successMsg.textContent = error;
         successMsg.style.display = 'block';
         return;
       }
       inputArea.style.display = 'none';
-      successMsg.style.color = '#22C55E';
+      successMsg.dataset.kind = 'ok';
       successMsg.textContent = isWhatsApp ? 'Sent to WhatsApp successfully' : 'Sent to your email successfully';
       successMsg.style.display = 'block';
       setTimeout(() => {
         if (appState === 'ended') {
           successMsg.style.display = 'none';
-          successMsg.style.color = '#ff4c39';
           document.getElementById('export-options').style.display = 'flex';
         }
       }, 5000);
@@ -1442,119 +1678,134 @@
 
     function resetCall() {
       appState = 'idle';
+      document.body.classList.remove('is-ended');
       targetIntensity = 0.15;
       targetState = 0.0;
       targetRotSpeed = 0.002;
-      targetX = 0.0;
-      targetY = 0.0;
-      targetScale = 1.0;
-      
-      document.getElementById('screen-ended').style.display = 'none';
-      document.getElementById('screen-idle').style.display = 'flex';
+      layoutOrb();
+
+      showScreen('screen-idle');
+      // the CTA rises right away (its long first-load delay waits for the splash)
+      document.querySelector('.idle-cta').style.setProperty('--d', '120ms');
       // Wake the agent again on the next interaction so the next call starts fast.
       if (window.__voicePrepare) window.__voicePrepare();
     }
 
-    function toggleTheme() {
-      const body = document.body;
-      const isLight = body.classList.toggle('light-mode');
-      const icon = document.querySelector('.theme-toggle-btn .material-symbols-outlined');
-      
-      if (isLight) {
-        icon.textContent = 'dark_mode';
-        renderer.setClearColor(0xf4f4f5, 0);
-        material.uniforms.uTheme.value = 1.0;
-        pointLight1.intensity = 3.5;
-        pointLight2.intensity = 2.5;
-        pointLight3.intensity = 1.2;
-      } else {
-        icon.textContent = 'light_mode';
-        renderer.setClearColor(0x000000, 0);
-        material.uniforms.uTheme.value = 0.0;
-        pointLight1.intensity = 4;
-        pointLight2.intensity = 2;
-        pointLight3.intensity = 1.0;
-      }
+    // ---- Theme -----------------------------------------------------------
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    let themeBusy = false;
+
+    function setTheme(light, instant) {
+      root.classList.toggle('light-mode', light);
+      try { localStorage.setItem('ikli-theme', light ? 'light' : 'dark'); } catch (e) {}
+      targetTheme = light ? 1 : 0;
+      if (instant) material.uniforms.uTheme.value = targetTheme;
+      if (themeMeta) themeMeta.content = light ? '#E2E2E6' : '#000000';
     }
 
+    function toggleTheme() {
+      if (themeBusy) return;
+      const light = !root.classList.contains('light-mode');
+      if (!document.startViewTransition || reduceMotionMQ.matches) {
+        // Fallback: every surface fades together, in step with the orb.
+        root.classList.add('theme-fade');
+        setTheme(light, false);
+        clearTimeout(toggleTheme._t);
+        toggleTheme._t = setTimeout(() => root.classList.remove('theme-fade'), 500);
+        return;
+      }
+      // The new theme opens as a circle from the toggle and sweeps the page.
+      const b = document.getElementById('theme-toggle').getBoundingClientRect();
+      const x = b.left + b.width / 2;
+      const y = b.top + b.height / 2;
+      const r = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+      themeBusy = true;
+      root.classList.add('theme-instant');
+      const vt = document.startViewTransition(() => {
+        setTheme(light, true);
+        renderer.render(scene, camera);   // the canvas is captured in the new theme
+      });
+      vt.ready.then(() => {
+        root.animate(
+          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+          { duration: 700, easing: 'cubic-bezier(0.65, 0, 0.35, 1)', pseudoElement: '::view-transition-new(root)' },
+        );
+      }).catch(() => {});
+      vt.finished.finally(() => {
+        root.classList.remove('theme-instant');
+        themeBusy = false;
+      });
+    }
+
+    // ---- Render loop -----------------------------------------------------
     const clock = new THREE.Clock();
+
     function animate() {
       requestAnimationFrame(animate);
-      const elapsed = clock.getElapsedTime();
-      
-      material.uniforms.uTime.value = elapsed;
-      material.uniforms.uIntensity.value = THREE.MathUtils.lerp(material.uniforms.uIntensity.value, targetIntensity, 0.04);
-      material.uniforms.uState.value = THREE.MathUtils.lerp(material.uniforms.uState.value, targetState, 0.04);
-      material.uniforms.uSentiment.value = THREE.MathUtils.lerp(material.uniforms.uSentiment.value, targetSentiment, 0.02);
-      
-      // Raycasting for hover detection
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const elapsed = clock.elapsedTime;
+      // frame-rate independent easing: same feel at 60 Hz and 120 Hz
+      const kf = (rate) => 1 - Math.pow(1 - rate, dt * 60);
+      const lerp = THREE.MathUtils.lerp;
+      const u = material.uniforms;
+
+      // Heartbeat: the agent's voice loudness (fast attack, slow release) plus
+      // a short kick per spoken word.
+      const raw = window.__agentLevel ? window.__agentLevel() : 0;
+      const lvl = Math.min(1, raw * 5);
+      voiceEnv += (lvl - voiceEnv) * (lvl > voiceEnv ? kf(0.5) : kf(0.1));
+      kick *= Math.exp(-dt * 7);
+      const beat = appState === 'active' && !reduceMotionMQ.matches ? Math.min(1.3, voiceEnv + kick * 0.5) : 0;
+
+      u.uTime.value = elapsed;
+      intensityBase = lerp(intensityBase, targetIntensity, kf(0.04));
+      u.uIntensity.value = intensityBase + beat * 0.12;
+      u.uState.value = lerp(u.uState.value, targetState, kf(0.04));
+      u.uSentiment.value = lerp(u.uSentiment.value, targetSentiment, kf(0.02));
+      u.uTheme.value = lerp(u.uTheme.value, targetTheme, kf(0.12));
+
+      // Hover (mouse only)
       raycaster.setFromCamera(mouseVector, camera);
-      const intersects = raycaster.intersectObject(orb);
-      isHoveringOrb = intersects.length > 0;
+      isHoveringOrb = raycaster.intersectObject(orb).length > 0;
+      hoverScaleFactor = lerp(hoverScaleFactor, isHoveringOrb ? 1.08 : 1.0, kf(0.08));
+      hoverGlowFactor = lerp(hoverGlowFactor, isHoveringOrb ? 2.5 : 1.0, kf(0.08));
 
-      // Smooth interpolation for hover effects
-      hoverScaleFactor = THREE.MathUtils.lerp(hoverScaleFactor, isHoveringOrb ? 1.08 : 1.0, 0.08);
-      hoverGlowFactor = THREE.MathUtils.lerp(hoverGlowFactor, isHoveringOrb ? 2.5 : 1.0, 0.08);
+      // Mouse-responsive rotation
+      mouseX = lerp(mouseX, targetOrbMouseX, kf(0.05));
+      mouseY = lerp(mouseY, targetOrbMouseY, kf(0.05));
+      const spin = dt * 60;
+      orb.rotation.y += (targetRotSpeed + mouseX * 0.02) * spin;
+      orb.rotation.x += (targetRotSpeed * 0.4 + mouseY * 0.02) * spin;
 
-      // Mouse responsive rotation
-      mouseX = THREE.MathUtils.lerp(mouseX, targetOrbMouseX, 0.05);
-      mouseY = THREE.MathUtils.lerp(mouseY, targetOrbMouseY, 0.05);
+      orb.position.x = lerp(orb.position.x, targetX, kf(0.045));
+      orbBaseY = lerp(orbBaseY, targetY, kf(0.045));
+      orb.position.y = orbBaseY + Math.sin(elapsed * 1.2) * 0.08;   // gentle float
 
-      orb.rotation.y += targetRotSpeed + (mouseX * 0.02);
-      orb.rotation.x += (targetRotSpeed * 0.4) + (mouseY * 0.02);
-      
-      orb.position.x = THREE.MathUtils.lerp(orb.position.x, targetX, 0.04);
-      orb.position.y = THREE.MathUtils.lerp(orb.position.y, targetY, 0.04);
-      orb.position.y += Math.sin(elapsed * 1.2) * 0.08;
-      
-      // Subtle breathing pulse + Hover scale
-      const pulse = 1.0 + Math.sin(elapsed * 1.5) * 0.02;
-      orb.scale.setScalar(THREE.MathUtils.lerp(orb.scale.x, targetScale * pulse * hoverScaleFactor, 0.04));
-      
-      glowMesh.scale.copy(orb.scale);
-      glowMesh.scale.multiplyScalar(1.2); // Maintain shadow/glow buffer
+      // Breathing + hover + heartbeat
+      baseScale = lerp(baseScale, targetScale * hoverScaleFactor, kf(0.045));
+      const breathe = 1.0 + Math.sin(elapsed * 1.5) * 0.02;
+      orb.scale.setScalar(baseScale * breathe * (1 + beat * 0.07));
+
+      glowMesh.scale.copy(orb.scale).multiplyScalar(1.2);
       glowMesh.position.copy(orb.position);
-      
-      // Shadow / Halo effect intensified on hover
-      const baseGlow = 0.03 + material.uniforms.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02;
+      const baseGlow = 0.03 + u.uState.value * 0.07 + Math.sin(elapsed * 2) * 0.02 + beat * 0.05;
       glowMat.opacity = baseGlow * hoverGlowFactor;
-      
-      // Dynamic Lighting Updates
-      const state = material.uniforms.uState.value;
-      const sentiment = material.uniforms.uSentiment.value;
-      
-      // Move lights slightly
-      pointLight1.position.x = 10 + Math.sin(elapsed * 0.5) * 2;
-      pointLight1.position.z = 10 + Math.cos(elapsed * 0.5) * 2;
-      
-      pointLight2.position.y = -5 + Math.sin(elapsed * 0.8) * 3;
-      
-      // Color shifts for Light 2 (Orange/Sentiment reactive)
-      const warmColor = new THREE.Color(0xff4c39); // Iklipse Orange
-      const sentimentShift = new THREE.Color().lerpColors(new THREE.Color(0x4f46e5), warmColor, sentiment);
-      pointLight2.color.lerp(sentimentShift, 0.05);
 
-      // Light 3 Reactivity (Rim/Accent)
-      pointLight3.intensity = THREE.MathUtils.lerp(pointLight3.intensity, (state * 2.0) + 0.2, 0.05);
-      pointLight3.position.x = Math.sin(elapsed * 1.5) * 5;
-      
       renderer.render(scene, camera);
     }
     animate();
 
     let __lastW = window.innerWidth;
     window.addEventListener('resize', () => {
-      // Ignore height-only changes (mobile keyboard / address bar). Reallocating
-      // the WebGL buffers on every keyboard toggle stutters the agent's audio, and
-      // the orb layout only depends on width anyway.
-      if (window.innerWidth === __lastW) return;
-      __lastW = window.innerWidth;
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      camera.aspect = window.innerWidth / window.innerHeight;
-      applyResponsiveCamera();          // re-pull the camera for the new width
-      camera.updateProjectionMatrix();
-      // If a call is live, re-place the orb for the new orientation/size.
-      if (appState === 'active') positionOrbForCall();
+      // Ignore height-only changes for the WebGL buffer (mobile keyboard / address
+      // bar): reallocating it on every keyboard toggle stutters the agent's audio.
+      if (window.innerWidth !== __lastW) {
+        __lastW = window.innerWidth;
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+      }
+      layoutOrb();   // cheap: only moves targets
     });
   </script>
 
