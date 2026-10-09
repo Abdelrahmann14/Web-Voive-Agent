@@ -2,14 +2,18 @@
 LiveKit voice agent worker, latency-optimized for English.
 
 Pipeline:
-    Deepgram nova-3 (STT, English, fast endpointing)
-      -> Claude Sonnet 5.5 (LLM, effort low, prompt caching, preemptive generation)
+    LiveKit BVC noise cancellation on the caller's mic
+      -> Deepgram Flux (STT with built-in end-of-turn detection, English)
+      -> Claude (LLM_MODEL, effort low, prompt caching, preemptive generation)
       -> ElevenLabs Flash v2.5 (TTS, auto_mode)
     Silero VAD + STT-based turn detection for fast, natural turn-taking.
 
 Latency choices:
   * language pinned to English everywhere (no auto-detect overhead)
-  * STT endpointing 60 ms + no_delay -> STT finalizes quickly
+  * Flux decides the turn is over from the words, not a fixed silence, so a
+    mid-sentence pause no longer cuts the caller off (nova-3 with 60 ms
+    endpointing split "I'm just a developer in ... our agency" into two turns);
+    its eager end-of-turn starts the reply before the turn is confirmed
   * turn_detection="stt" -> no heavy multilingual EOU model on the critical path
   * VAD min_silence_duration 0.2 s -> responds fast after the user stops
   * endpointing min_delay 0.1 s, preemptive generation -> reply starts early
@@ -39,9 +43,9 @@ import numpy as np
 import requests
 from dotenv import load_dotenv
 from livekit import agents, rtc
-from livekit.agents import NOT_GIVEN, Agent, AgentSession, function_tool
+from livekit.agents import NOT_GIVEN, Agent, AgentSession, function_tool, room_io
 from livekit.agents.utils import is_given
-from livekit.plugins import anthropic, deepgram, elevenlabs, silero
+from livekit.plugins import anthropic, deepgram, elevenlabs, noise_cancellation, silero
 from livekit.plugins.anthropic import llm as _anthropic_llm
 from livekit.plugins.elevenlabs import tts as el_tts
 
@@ -57,7 +61,7 @@ logger = logging.getLogger("ikli")
 FIXED_GREETING = "Hey! I'm Ikli, from Iklipse. Who am I talking to?"
 GREETING_SR = 24000  # ElevenLabs pcm_24000
 
-# Deepgram nova-3 Keyterm Prompting (English only): boost brand + domain words so
+# Deepgram Keyterm Prompting (Flux and nova-3): boost brand + domain words so
 # the STT stops mishearing them (e.g. "Iklipse"/"Ikli" transcribed as "Eclipse").
 KEYTERMS = [
     "Iklipse", "Ikli", "Digiredo", "Freyusion",
@@ -84,7 +88,8 @@ class ClaudeLLM(anthropic.LLM):
       entirely via "between_tools" measured slower, ~1.5 s, so it stays adaptive.)
     - server-side refusal fallback: if a safety classifier ever declines a turn,
       the API re-runs it on a fallback model inside the same call instead of
-      leaving the caller in silence.
+      leaving the caller in silence. Skipped on the 4.x models: it measured
+      ~0.9 s slower first token on Opus 4.6 (2.7 s vs 1.8 s).
     """
 
     def __init__(self, *, api_key: str | None = None, **kwargs):
@@ -99,8 +104,9 @@ class ClaudeLLM(anthropic.LLM):
     def chat(self, *, extra_kwargs=NOT_GIVEN, **kwargs):
         extra = dict(extra_kwargs) if is_given(extra_kwargs) else {}
         extra.setdefault("output_config", {"effort": os.environ.get("LLM_EFFORT", "low")})
-        extra.setdefault("extra_headers", {"anthropic-beta": "server-side-fallback-2026-07-01"})
-        extra.setdefault("extra_body", {"fallbacks": "default"})
+        if not re.search(r"-4-\d", self.model):
+            extra.setdefault("extra_headers", {"anthropic-beta": "server-side-fallback-2026-07-01"})
+            extra.setdefault("extra_body", {"fallbacks": "default"})
         return super().chat(extra_kwargs=extra, **kwargs)
 
 
@@ -108,7 +114,11 @@ class ClaudeLLM(anthropic.LLM):
 # transcript (no LLM tool call, so no extra round trip on that turn) and pushed to
 # the browser to pre-fill the booking form and the report export.
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_SPOKEN_EMAIL_RE = re.compile(r"\b([\w.+-]+) at ([\w-]+(?: dot [\w-]+)+)\b", re.I)
+# Flux writes a spoken address out in words: "omar dot hassan at gmail dot com".
+_SPOKEN_EMAIL_RE = re.compile(
+    r"\b([\w+-]+(?: (?:dot|underscore|dash) [\w+-]+)*) at ([\w-]+(?: dot [\w-]+)+)\b", re.I
+)
+_SPOKEN_SYMBOLS = {" dot ": ".", " underscore ": "_", " dash ": "-"}
 _PHONE_IN_SPEECH = re.compile(r"\+?\d[\d\s().-]{6,}\d")
 
 
@@ -117,7 +127,9 @@ def _contacts_in(text: str) -> tuple[str | None, str | None]:
     if m := _EMAIL_RE.search(text):
         email = m.group().rstrip(".")
     elif m := _SPOKEN_EMAIL_RE.search(text):
-        email = f"{m.group(1)}@{m.group(2).replace(' dot ', '.')}".lower()
+        email = f"{m.group(1)}@{m.group(2)}".lower()
+        for word, symbol in _SPOKEN_SYMBOLS.items():
+            email = email.replace(word, symbol)
     phone = None
     for m in _PHONE_IN_SPEECH.finditer(text):
         digits = digits_only(m.group())
@@ -340,25 +352,39 @@ def prewarm(proc: agents.JobProcess):
 
 def build_session(ctx: agents.JobContext) -> AgentSession:
     vad = ctx.proc.userdata.get("vad") or silero.VAD.load(min_silence_duration=0.2)
-    dg_model = os.environ.get("DEEPGRAM_MODEL", "nova-3")
-    stt_kwargs = dict(
-        model=dg_model,
-        language="en",            # English only, no language detection latency
-        interim_results=True,
-        smart_format=True,
-        punctuate=True,
-        no_delay=True,            # emit finals without extra hold
-        endpointing_ms=60,        # was 25 (too aggressive, clipped trailing words)
-        filler_words=False,
-        api_key=os.environ.get("DEEPGRAM_API_KEY"),
-    )
-    # Keyterm prompting is a nova-3 (English) feature; only send it on nova-3.
-    if dg_model.startswith("nova-3"):
-        stt_kwargs["keyterm"] = KEYTERMS
+    dg_model = os.environ.get("DEEPGRAM_MODEL", "flux-general-en")
+    if dg_model.startswith("flux"):
+        # Measured on paused speech: nova-3 ended the turn at every mid-sentence
+        # pause, Flux kept each sentence whole. Eager end-of-turn (0.4) hands the
+        # transcript over early so preemptive generation starts the reply ~0.1-0.8 s
+        # before the turn is confirmed; a resumed turn just discards that draft.
+        stt = deepgram.STTv2(
+            model=dg_model,
+            eager_eot_threshold=0.4,
+            numerals=True,  # "two zero one ..." -> "2 0 1 ...", so a spoken number is captured
+            keyterm=KEYTERMS,
+            api_key=os.environ.get("DEEPGRAM_API_KEY"),
+        )
+    else:
+        stt_kwargs = dict(
+            model=dg_model,
+            language="en",            # English only, no language detection latency
+            interim_results=True,
+            smart_format=True,
+            punctuate=True,
+            no_delay=True,            # emit finals without extra hold
+            endpointing_ms=60,        # was 25 (too aggressive, clipped trailing words)
+            filler_words=False,
+            api_key=os.environ.get("DEEPGRAM_API_KEY"),
+        )
+        # Keyterm prompting is a nova-3 (English) feature; only send it on nova-3.
+        if dg_model.startswith("nova-3"):
+            stt_kwargs["keyterm"] = KEYTERMS
+        stt = deepgram.STT(**stt_kwargs)
     return AgentSession(
-        stt=deepgram.STT(**stt_kwargs),
+        stt=stt,
         llm=ClaudeLLM(
-            model=os.environ.get("LLM_MODEL", "claude-sonnet-5-5"),
+            model=os.environ.get("LLM_MODEL", "claude-opus-4-6"),
             caching="ephemeral",           # ~7k-token system prompt served from cache each turn
             api_key=os.environ.get("ANTHROPIC_API_KEY"),
         ),
@@ -383,7 +409,7 @@ def build_session(ctx: agents.JobContext) -> AgentSession:
         vad=vad,
         turn_handling={
             # Deepgram endpointing (fast) instead of the heavy EOU model.
-            "turn_detection": "stt",
+            "turn_detection": "stt",  # Flux's end-of-turn (or nova-3 endpointing)
             # Respond as soon as the user stops; cap the wait for a slow trailing pause.
             "endpointing": {"min_delay": 0.10, "max_delay": 2.0},
             # Two words to cut Ikli off: a lone "yeah" / "mm-hmm", or a single word of
@@ -560,6 +586,11 @@ async def entrypoint(ctx: agents.JobContext):
             logger.info("turn latency", extra={"role": ev.item.role, **timing})
     await session.start(
         room=ctx.room,
+        # LiveKit Cloud noise + background-voice cancellation on the caller's mic, so
+        # the STT hears the caller and not the room, the TV or Ikli's own echo.
+        room_options=room_io.RoomOptions(
+            audio_input=room_io.AudioInputOptions(noise_cancellation=noise_cancellation.BVC()),
+        ),
         agent=IkliAgent(
             screen=screen,
             instructions=instructions_for(known_name),

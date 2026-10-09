@@ -1,5 +1,6 @@
 # LiveKit Agents + plugins (Deepgram STT, ElevenLabs TTS, Claude LLM, Silero VAD)
 livekit-agents[anthropic,deepgram,elevenlabs,silero]==1.8.1  # version verified live on LiveKit Cloud
+livekit-plugins-noise-cancellation~=0.3  # BVC on the caller's mic (LiveKit Cloud)
 livekit-api>=1.2,<2
 # Imported directly by agent.py / server.py / messaging.py
 anthropic>=1.12,<2
